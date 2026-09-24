@@ -113,7 +113,6 @@ class App {
       btnContinueWithGoogle: document.getElementById('btnContinueWithGoogle'),
       btnGoogleText: document.getElementById('btnGoogleText'),
       googleSignInBtnContainer: document.getElementById('googleSignInBtnContainer'),
-      googleConfigNotice: document.getElementById('googleConfigNotice'),
 
       // Password Sub-Tabs & Form
       subTabLogin: document.getElementById('subTabLogin'),
@@ -699,7 +698,6 @@ class App {
         } else {
           this.dom.authModal.classList.add('open');
           if (this.dom.authErrorMsg) this.dom.authErrorMsg.textContent = '';
-          if (this.dom.googleConfigNotice) this.dom.googleConfigNotice.style.display = 'none';
         }
       });
     }
@@ -722,9 +720,8 @@ class App {
         if (this.dom.authErrorMsg) this.dom.authErrorMsg.textContent = '';
 
         if (!this.googleClientId) {
-          if (this.dom.googleConfigNotice) this.dom.googleConfigNotice.style.display = 'block';
           if (this.dom.authErrorMsg) {
-            this.dom.authErrorMsg.textContent = 'Google OAuth Client ID required. See instructions below.';
+            this.dom.authErrorMsg.textContent = 'Google sign-in is currently unavailable.';
           }
           return;
         }
