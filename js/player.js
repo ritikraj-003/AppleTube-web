@@ -1086,12 +1086,29 @@ class AudioPlayer {
     this.isFetchingSuggestions = true;
     try {
       const res = await api.getRelatedTracks(track, targetMood, 15);
-      if (res && Array.isArray(res.tracks)) {
-        const existingIds = new Set(this.queue.map(t => t.id));
-        existingIds.add(track.id);
-        this.suggestedTracks = res.tracks.filter(t => !existingIds.has(t.id));
-        this.notify('suggestionsUpdate', { mood: targetMood, tracks: this.suggestedTracks });
-      }
+      const existingIds = new Set(this.queue.map(t => t.id));
+      existingIds.add(track.id);
+      const remoteTracks = Array.isArray(res?.tracks)
+        ? res.tracks.filter(t => !existingIds.has(t.id))
+        : [];
+      const fallbackTracks = [...this.queue, ...CONFIG.CURATED_TRACKS]
+        .filter(candidate => candidate && !existingIds.has(candidate.id))
+        .map(candidate => ({
+          track: candidate,
+          score: (candidate.mood === targetMood ? 2 : 0) +
+            (candidate.artist === track.artist ? 1 : 0)
+        }))
+        .sort((a, b) => b.score - a.score)
+        .map(({ track: candidate }) => candidate);
+      const seenIds = new Set();
+      this.suggestedTracks = [...remoteTracks, ...fallbackTracks]
+        .filter(candidate => {
+          if (seenIds.has(candidate.id) || candidate.id === track.id) return false;
+          seenIds.add(candidate.id);
+          return true;
+        })
+        .slice(0, 10);
+      this.notify('suggestionsUpdate', { mood: targetMood, tracks: this.suggestedTracks });
     } catch (err) {
       console.warn('Failed to fetch mood suggestions:', err);
     } finally {

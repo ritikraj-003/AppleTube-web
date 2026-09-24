@@ -716,7 +716,7 @@ export class UIManager {
     const list = document.createElement('div');
     list.className = 'suggestions-list';
 
-    suggestions.slice(0, 8).forEach(track => {
+    suggestions.slice(0, 10).forEach(track => {
       const item = document.createElement('div');
       item.className = 'suggestion-item';
       item.innerHTML = `

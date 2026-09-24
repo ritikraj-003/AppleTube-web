@@ -1185,27 +1185,59 @@ class App {
     if (this.dom.fullscreenOverlay) {
       let swipeStartY = 0;
       let swipeStartX = 0;
+      let swipeCurrentY = 0;
       let swipeTracking = false;
+      let swipeDirection = null;
 
       this.dom.fullscreenOverlay.addEventListener('touchstart', (event) => {
-        if (event.touches.length !== 1 || event.target.closest('button, input, .fullscreen-progress-row')) {
+        if (event.touches.length !== 1 || event.target.closest('button, input, .fullscreen-progress-row, .queue-drawer')) {
           swipeTracking = false;
           return;
         }
         swipeStartY = event.touches[0].clientY;
         swipeStartX = event.touches[0].clientX;
+        swipeCurrentY = swipeStartY;
+        swipeDirection = null;
         swipeTracking = true;
       }, { passive: true });
+
+      this.dom.fullscreenOverlay.addEventListener('touchmove', (event) => {
+        if (!swipeTracking || event.touches.length !== 1) return;
+        const touch = event.touches[0];
+        const deltaY = touch.clientY - swipeStartY;
+        const deltaX = touch.clientX - swipeStartX;
+        swipeCurrentY = touch.clientY;
+
+        if (!swipeDirection && Math.max(Math.abs(deltaY), Math.abs(deltaX)) > 8) {
+          swipeDirection = Math.abs(deltaY) > Math.abs(deltaX) ? 'vertical' : 'horizontal';
+        }
+        if (swipeDirection === 'vertical' && deltaY > 0) {
+          event.preventDefault();
+          this.dom.fullscreenOverlay.style.setProperty('--fullscreen-drag-offset', `${Math.min(deltaY, window.innerHeight)}px`);
+          this.dom.fullscreenOverlay.classList.add('dragging');
+        }
+      }, { passive: false });
 
       this.dom.fullscreenOverlay.addEventListener('touchend', (event) => {
         if (!swipeTracking || event.changedTouches.length !== 1) return;
         swipeTracking = false;
         const endTouch = event.changedTouches[0];
         const verticalDistance = swipeStartY - endTouch.clientY;
+        const downwardDistance = swipeCurrentY - swipeStartY;
         const horizontalDistance = Math.abs(swipeStartX - endTouch.clientX);
-        if (verticalDistance > 70 && verticalDistance > horizontalDistance * 1.2) {
+        this.dom.fullscreenOverlay.classList.remove('dragging');
+        this.dom.fullscreenOverlay.style.removeProperty('--fullscreen-drag-offset');
+        if (downwardDistance > 80 && downwardDistance > horizontalDistance * 1.2) {
+          this.toggleFullscreen(false);
+        } else if (verticalDistance > 70 && verticalDistance > horizontalDistance * 1.2) {
           this.dom.queueDrawer.classList.add('open');
         }
+      }, { passive: true });
+
+      this.dom.fullscreenOverlay.addEventListener('touchcancel', () => {
+        swipeTracking = false;
+        this.dom.fullscreenOverlay.classList.remove('dragging');
+        this.dom.fullscreenOverlay.style.removeProperty('--fullscreen-drag-offset');
       }, { passive: true });
     }
 
@@ -2216,7 +2248,21 @@ class App {
 
   toggleFullscreen(forceState = null) {
     const shouldOpen = forceState !== null ? forceState : !this.dom.fullscreenOverlay.classList.contains('open');
+    clearTimeout(this.fullscreenCloseTimer);
+    this.dom.fullscreenOverlay.classList.remove('dragging');
+    this.dom.fullscreenOverlay.style.removeProperty('--fullscreen-drag-offset');
+    if (!shouldOpen && this.dom.fullscreenOverlay.classList.contains('open')) {
+      this.dom.fullscreenOverlay.classList.add('closing');
+      this.fullscreenCloseTimer = setTimeout(() => {
+        this.dom.fullscreenOverlay.classList.remove('open', 'closing');
+        document.body.classList.remove('fullscreen-player-open');
+      }, 300);
+      return;
+    }
+
     this.dom.fullscreenOverlay.classList.toggle('open', shouldOpen);
+    this.dom.fullscreenOverlay.classList.remove('closing');
+    document.body.classList.toggle('fullscreen-player-open', shouldOpen);
     if (shouldOpen) {
       if (this.visualizer) {
         this.visualizer.resize();

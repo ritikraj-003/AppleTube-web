@@ -13,7 +13,23 @@
   padding: 16px 28px calc(env(safe-area-inset-bottom, 0px) + 24px);
   overflow-y: auto;
   overflow-x: hidden;
-  transition: opacity var(--transition-slow);
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1), opacity var(--transition-slow);
+}
+
+body.fullscreen-player-open {
+  overflow: hidden;
+}
+
+.fullscreen-overlay.dragging {
+  transform: translateY(var(--fullscreen-drag-offset, 0px));
+  opacity: 0.92;
+  transition: none;
+}
+
+.fullscreen-overlay.closing {
+  display: flex;
+  transform: translateY(100%);
+  opacity: 0;
 }
 
 .fullscreen-overlay.open {
