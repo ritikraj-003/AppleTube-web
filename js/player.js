@@ -26,6 +26,7 @@ class AudioPlayer {
     this.recommendationQueue = [];
     this.seedTrack = null;
     this.playbackContext = { type: 'browse' };
+    this.sessionHistory = [];
     this.currentPlayStartTime = 0;
     this.hasRecordedCompletion = false;
     this.isGeneratingRecommendations = false;
@@ -391,6 +392,8 @@ class AudioPlayer {
     } else if (this.repeatMode === 'all') {
       this.currentIndex = 0;
       this.loadAndPlayCurrent();
+    } else if (this.isDeterministicPlayback()) {
+      this.notify('playbackChange', false);
     } else if (canAutoAdvance && this.recommendationQueue.length > 0) {
       const nextTrack = this.recommendationQueue.shift();
       this.queue.push(nextTrack);
@@ -487,6 +490,10 @@ class AudioPlayer {
     return this.smartMoodAutoplay || ['favorites', 'playlist'].includes(this.playbackContext.type);
   }
 
+  isDeterministicPlayback() {
+    return ['favorites', 'playlist'].includes(this.playbackContext.type);
+  }
+
   playTrack(track, queue = null, context = { type: 'browse' }) {
     if (!track) return;
     this.streamRetryCount = 0;
@@ -541,7 +548,7 @@ class AudioPlayer {
   }
 
   async fetchRecommendationsForSeed(seedTrack) {
-    if (!seedTrack || this.isGeneratingRecommendations) return;
+    if (!seedTrack || this.isGeneratingRecommendations || this.isDeterministicPlayback()) return;
     this.isGeneratingRecommendations = true;
     try {
       const existingIds = [seedTrack.id, seedTrack.videoId].filter(Boolean);
@@ -549,6 +556,8 @@ class AudioPlayer {
         limit: 20,
         existingQueueIds: existingIds
       });
+
+      if (this.isDeterministicPlayback()) return;
 
       if (Array.isArray(recs) && recs.length > 0) {
         this.recommendationQueue = recs;
@@ -570,7 +579,8 @@ class AudioPlayer {
     const existingIds = new Set(historyAndCurrent.map(t => t.id || t.videoId));
 
     const combinedUpNext = [];
-    for (const t of [...this.userQueue, ...this.recommendationQueue]) {
+    const recommendationTracks = this.isDeterministicPlayback() ? [] : this.recommendationQueue;
+    for (const t of [...this.userQueue, ...recommendationTracks]) {
       const vid = t.videoId || t.id;
       if (!existingIds.has(t.id) && !existingIds.has(vid)) {
         existingIds.add(t.id);
@@ -591,6 +601,7 @@ class AudioPlayer {
   }
 
   async checkAndReplenishRecommendations() {
+    if (this.isDeterministicPlayback()) return;
     const remainingCount = this.queue.length - (this.currentIndex + 1);
     if (remainingCount < 4 && this.currentTrack && !this.isGeneratingRecommendations) {
       this.isGeneratingRecommendations = true;
@@ -621,7 +632,10 @@ class AudioPlayer {
     this.currentPlayStartTime = Date.now();
     this.hasRecordedCompletion = false;
 
-    // Record playback start in user preferences
+    // Normalize metadata before recording the event so profile and ranking agree.
+    this.currentTrack.vibeMetadata = api.extractVibe(this.currentTrack);
+    this.currentTrack.language = this.currentTrack.vibeMetadata.language;
+    this.sessionHistory = [this.currentTrack, ...this.sessionHistory.filter(item => item.id !== this.currentTrack.id)].slice(0, 20);
     StorageManager.recordPlaybackEvent(this.currentTrack, 'play');
 
     // Auto-detect YouTube video ID from track.videoId or track.id (e.g. 'yt_dQw4w9WgXcQ' or 11-char ID)
@@ -654,7 +668,6 @@ class AudioPlayer {
     this.notify('trackChange', this.currentTrack);
 
     // Detect and notify song mood, then pre-fetch same-mood continuation
-    this.currentTrack.vibeMetadata = api.extractVibe(this.currentTrack);
     const detectedMood = this.currentTrack.mood || api.detectMood(this.currentTrack);
     this.currentTrack.mood = detectedMood;
     this.currentMood = detectedMood;
@@ -786,6 +799,8 @@ class AudioPlayer {
     } else if (this.repeatMode === 'all') {
       this.currentIndex = 0;
       this.loadAndPlayCurrent();
+    } else if (this.isDeterministicPlayback()) {
+      this.notify('playbackChange', false);
     } else if (this.isContinuousPlaybackAllowed() && this.recommendationQueue.length > 0) {
       const nextTrack = this.recommendationQueue.shift();
       this.queue.push(nextTrack);
@@ -1092,7 +1107,10 @@ class AudioPlayer {
 
   // --- Mood-Based Next Music Suggestions & Smart Autoplay ---
   async fetchMoodSuggestions(track, overrideMood = null) {
-    if (!track) return;
+    if (!track || this.isDeterministicPlayback()) {
+      this.suggestedTracks = [];
+      return;
+    }
     const requestId = (this.suggestionRequestId || 0) + 1;
     this.suggestionRequestId = requestId;
     const targetMood = overrideMood || this.currentMood;
@@ -1105,7 +1123,8 @@ class AudioPlayer {
       if (track.videoId) existingIds.add(track.videoId);
       const rankedTracks = await recommendationEngine.generateQueue(track, {
         limit: 15,
-        existingQueueIds: [...existingIds]
+        existingQueueIds: [...existingIds],
+        sessionContext: this.sessionHistory
       });
       if (requestId !== this.suggestionRequestId || this.currentTrack?.id !== track.id) return;
       const remoteTracks = (rankedTracks.length > 0 ? rankedTracks : (res?.tracks || []))
@@ -1136,7 +1155,7 @@ class AudioPlayer {
     excluded.add(track.id);
     if (track.videoId) excluded.add(track.videoId);
     const seedLanguage = api.extractVibe(track).language;
-    if (!['hindi', 'punjabi'].includes(seedLanguage)) return [];
+    if (!['hindi', 'bhojpuri', 'punjabi', 'tamil', 'telugu', 'bengali', 'english'].includes(seedLanguage)) return [];
     const libraryTracks = [
       ...StorageManager.getLikedSongs(),
       ...StorageManager.getPlaylists().flatMap(playlist => playlist.tracks || []),

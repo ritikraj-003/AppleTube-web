@@ -7,18 +7,24 @@
 import { api } from './api.js';
 import { StorageManager } from './storage.js';
 
+export const RECOMMENDATION_WEIGHTS = Object.freeze({
+  language: 0.25,
+  genre: 0.15,
+  mood: 0.15,
+  similarity: 0.15,
+  artist: 0.08,
+  energy: 0.07,
+  history: 0.07,
+  session: 0.05,
+  exploration: 0.03
+});
+
+export const RECENT_SONG_WINDOW = 10;
+
 export class RecommendationEngine {
   constructor(customWeights = {}) {
     // Configurable multi-factor recommendation scoring weights
-    this.weights = {
-      artistSimilarity: 0.25,
-      genreSimilarity: 0.20,
-      languageSimilarity: 0.10,
-      songSimilarity: 0.20,
-      userHistoryPreference: 0.15,
-      popularityRelevance: 0.10,
-      ...customWeights
-    };
+    this.weights = { ...RECOMMENDATION_WEIGHTS, ...customWeights };
 
     // Keep an in-memory cache of generated recommendation batches
     this.recommendationCache = new Map();
@@ -82,6 +88,9 @@ export class RecommendationEngine {
         if (!vid || seen.has(vid) || seen.has(track.id) || currentQueueIds.has(track.id) || currentQueueIds.has(vid)) {
           continue;
         }
+        if (api.extractVibe(track).language !== seedVibe.language) {
+          continue;
+        }
         // Duration sanity check: only normal songs (40s to 600s)
         const dur = Number(track.duration) || 180;
         if (dur < 40 || dur > 600) {
@@ -92,13 +101,17 @@ export class RecommendationEngine {
         uniqueCandidates.push(track);
       }
 
-      // 3. User listening history & recent plays suppression
+      // 3. User listening history, recent window, and current session context
       const userPrefs = StorageManager.getUserPreferences();
-      const recentPlayed = new Set(StorageManager.getRecentPlayedIds(15));
+      const recentPlayed = new Set((userPrefs.recentTrackIds || []).slice(0, options.recentSongWindow || RECENT_SONG_WINDOW));
+      const sessionContext = options.sessionContext || userPrefs.sessionTrackIds || [];
 
       // 4. Score each candidate
       const scoredCandidates = uniqueCandidates.map((candidate, index) => {
-        const scoreBreakdown = this.scoreCandidate(candidate, seedTrack, userPrefs, index, uniqueCandidates.length);
+        const scoreBreakdown = this.scoreCandidate(candidate, seedTrack, userPrefs, index, uniqueCandidates.length, {
+          recentPlayed,
+          sessionContext
+        });
         return {
           track: candidate,
           score: scoreBreakdown.total,
@@ -109,20 +122,19 @@ export class RecommendationEngine {
       // Sort by final composite score descending
       scoredCandidates.sort((a, b) => b.score - a.score);
 
-      // 5. Apply Diversity & Hygiene Filters
-      // - Max 2 tracks per artist in top 10
-      // - Suppress recently played tracks
+      // 5. Apply diversity while preserving the ranked score order.
+      const freshCandidates = scoredCandidates.filter(item => {
+        const key = item.track.videoId || item.track.id;
+        return !recentPlayed.has(key);
+      });
+      const rankedPool = freshCandidates.length >= Math.min(limit, 10)
+        ? freshCandidates
+        : [...freshCandidates, ...scoredCandidates.filter(item => !freshCandidates.includes(item))];
       const diversifiedList = [];
       const artistCounts = {};
 
-      for (const item of scoredCandidates) {
+      for (const item of rankedPool) {
         const t = item.track;
-        const trackId = String(t.id || t.videoId);
-
-        // Recent play suppression (penalize or push to end unless highly scored)
-        if (recentPlayed.has(trackId)) {
-          continue;
-        }
 
         const primaryArt = (StorageManager.parseArtists(t.artist)[0] || t.artist || 'Unknown').toLowerCase();
         const currentArtCount = artistCounts[primaryArt] || 0;
@@ -145,7 +157,7 @@ export class RecommendationEngine {
 
       // If diversity filter was too aggressive and we have fewer than 10 tracks, fill with remaining scored tracks
       if (diversifiedList.length < 10) {
-        for (const item of scoredCandidates) {
+        for (const item of rankedPool) {
           if (!diversifiedList.some(d => d.id === item.track.id || (d.videoId && d.videoId === item.track.videoId))) {
             diversifiedList.push(item.track);
             if (diversifiedList.length >= limit) break;
@@ -169,41 +181,51 @@ export class RecommendationEngine {
   }
 
   /**
-   * Multi-Factor Candidate Scoring
-   * score = (artistSim * 0.25) + (genreSim * 0.20) + (langSim * 0.10) + (songSim * 0.20) + (userPref * 0.15) + (popRel * 0.10)
+   * Weighted context score. All components are normalized to 0..1 before
+   * penalties are applied, so language continuity remains the strongest gate.
    */
-  scoreCandidate(candidate, seedTrack, userPrefs, rankIndex, totalCandidates) {
+  scoreCandidate(candidate, seedTrack, userPrefs, rankIndex, totalCandidates, context = {}) {
     const seedVibe = seedTrack.vibeMetadata || api.extractVibe(seedTrack);
     const candidateVibe = candidate.vibeMetadata || api.extractVibe(candidate);
-    const artistTier = this.computeArtistTier(candidate, seedTrack);
-    const artistSim = this.computeArtistSimilarity(candidate, seedTrack);
-    const genreSim = this.computeGenreSimilarity(candidate, seedTrack);
-    const langSim = this.computeLanguageSimilarity(candidate, seedTrack);
-    const songSim = this.computeSongSimilarity(candidate, seedTrack);
-    const userPref = this.computeUserPreferenceScore(candidate, userPrefs);
-    const popRel = this.computePopularityRelevance(rankIndex, totalCandidates);
-
-    const moodSim = seedVibe.mood === candidateVibe.mood ? 1 : genreSim * 0.65;
-    const total =
-      (artistTier * 0.40) +
-      (moodSim * 0.22) +
-      (genreSim * 0.16) +
-      (langSim * 0.12) +
-      (songSim * 0.05) +
-      (userPref * 0.03) +
-      (popRel * 0.02);
+    const language = this.computeLanguageSimilarity(candidate, seedTrack, userPrefs);
+    const genre = this.computeGenreSimilarity(candidate, seedTrack);
+    const mood = seedVibe.mood === candidateVibe.mood ? 1 : genre * 0.65;
+    const songSimilarity = this.computeSongSimilarity(candidate, seedTrack);
+    const albumSimilarity = this.computeAlbumSimilarity(candidate, seedTrack);
+    const eraSimilarity = this.computeEraSimilarity(candidateVibe, seedVibe);
+    const similarity = (songSimilarity + albumSimilarity + eraSimilarity) / 3;
+    const artist = this.computeArtistTier(candidate, seedTrack);
+    const energy = this.computeEnergySimilarity(candidateVibe, seedVibe);
+    const history = this.computeUserPreferenceScore(candidate, userPrefs);
+    const session = this.computeSessionScore(candidate, seedTrack, context.sessionContext);
+    const exploration = this.computeExplorationScore(candidate, seedTrack, rankIndex);
+    const recentPenalty = context.recentPlayed?.has(candidate.id) || context.recentPlayed?.has(candidate.videoId) ? 0.22 : 0;
+    const skipPenalty = this.computeSkipPenalty(candidate, userPrefs);
+    const weightTotal = Object.values(this.weights).reduce((sum, value) => sum + value, 0);
+    const weightedScore =
+      (language * this.weights.language) + (genre * this.weights.genre) + (mood * this.weights.mood) +
+      (similarity * this.weights.similarity) + (artist * this.weights.artist) +
+      (energy * this.weights.energy) + (history * this.weights.history) +
+      (session * this.weights.session) + (exploration * this.weights.exploration);
+    const total = (weightedScore / weightTotal) - recentPenalty - skipPenalty;
 
     return {
       total: Math.max(0, Math.min(1, total)),
-      artistTier,
-      moodSim,
+      language,
+      genre,
+      mood,
+      similarity,
+      songSimilarity,
+      albumSimilarity,
+      eraSimilarity,
+      artist,
+      energy,
+      history,
+      session,
+      exploration,
+      recentPenalty,
+      skipPenalty,
       vibe: candidateVibe,
-      artistSim,
-      genreSim,
-      langSim,
-      songSim,
-      userPref,
-      popRel
     };
   }
 
@@ -258,6 +280,45 @@ export class RecommendationEngine {
     return samePeerGroup ? 0.78 : 0.18;
   }
 
+  computeEnergySimilarity(candidateVibe, seedVibe) {
+    const distance = Math.abs((candidateVibe.energy ?? 0.5) - (seedVibe.energy ?? 0.5));
+    const tempoMatch = candidateVibe.tempo === seedVibe.tempo ? 0.2 : 0;
+    return Math.max(0, Math.min(1, 1 - distance + tempoMatch));
+  }
+
+  computeSessionScore(candidate, seedTrack, sessionTrackIds = []) {
+    if (!Array.isArray(sessionTrackIds) || sessionTrackIds.length === 0) return 0.5;
+    const seedLanguage = api.extractVibe(seedTrack).language;
+    const candidateLanguage = api.extractVibe(candidate).language;
+    const sessionLanguages = sessionTrackIds
+      .map(item => typeof item === 'object' ? api.extractVibe(item).language : null)
+      .filter(Boolean);
+    const sessionMoods = sessionTrackIds
+      .map(item => typeof item === 'object' ? api.extractVibe(item).mood : null)
+      .filter(Boolean);
+    if (sessionLanguages.length === 0) return candidateLanguage === seedLanguage ? 0.65 : 0;
+    const sessionLanguageMatch = sessionLanguages.filter(language => language === candidateLanguage).length / sessionLanguages.length;
+    const sessionMoodMatch = sessionMoods.filter(mood => mood === api.extractVibe(candidate).mood).length / sessionMoods.length;
+    return candidateLanguage === seedLanguage ? (0.65 + (sessionLanguageMatch * 0.2) + (sessionMoodMatch * 0.15)) : 0;
+  }
+
+  computeExplorationScore(candidate, seedTrack, rankIndex) {
+    const candidateVibe = api.extractVibe(candidate);
+    const seedVibe = api.extractVibe(seedTrack);
+    if (candidateVibe.language !== seedVibe.language) return 0;
+    return rankIndex < 5 && candidateVibe.mood === seedVibe.mood ? 0.2 : 0.05;
+  }
+
+  computeSkipPenalty(candidate, userPrefs) {
+    const trackStats = userPrefs?.tracks?.[candidate.id] || userPrefs?.tracks?.[candidate.videoId];
+    const artistStats = StorageManager.parseArtists(candidate.artist)
+      .map(artist => userPrefs?.artists?.[artist.toLowerCase()])
+      .filter(Boolean);
+    const trackSkips = trackStats?.skips || 0;
+    const artistSkips = artistStats.reduce((sum, stat) => sum + (stat.skips || 0), 0);
+    return Math.min(0.25, (trackSkips * 0.04) + (artistSkips * 0.015));
+  }
+
   /**
    * 2. Genre / Mood Similarity: 0.0 - 1.0
    */
@@ -307,7 +368,7 @@ export class RecommendationEngine {
    * 3. Language Similarity: 0.0 - 1.0
    * Detects Hindi/Bollywood, Punjabi, English, South Indian based on scripts and keywords
    */
-  computeLanguageSimilarity(candidate, seedTrack) {
+  computeLanguageSimilarity(candidate, seedTrack, userPrefs = {}) {
     const seedLang = this.detectLanguage(seedTrack.title, seedTrack.artist);
     const candLang = this.detectLanguage(candidate.title, candidate.artist);
 
@@ -315,12 +376,14 @@ export class RecommendationEngine {
       return 1.0;
     }
 
-    // Cross-regional affinity (e.g. Hindi & Punjabi often blend well in Indian music)
-    if ((seedLang === 'hindi' && candLang === 'punjabi') || (seedLang === 'punjabi' && candLang === 'hindi')) {
-      return 0.6;
+    const multilingual = Object.entries(userPrefs.languages || {})
+      .filter(([, stat]) => (stat.playCount || 0) + (stat.completions || 0) >= 3)
+      .map(([language]) => language);
+    if (multilingual.includes(candLang) && multilingual.includes(seedLang)) {
+      return 0.35;
     }
 
-    return 0.2;
+    return 0;
   }
 
   detectLanguage(title = '', artist = '') {
@@ -356,6 +419,20 @@ export class RecommendationEngine {
     return 0.3 + (durRatio * 0.2);
   }
 
+  computeAlbumSimilarity(candidate, seedTrack) {
+    const seedAlbum = String(seedTrack.album || '').toLowerCase().trim();
+    const candidateAlbum = String(candidate.album || '').toLowerCase().trim();
+    if (!seedAlbum || !candidateAlbum || seedAlbum === 'youtube music' || candidateAlbum === 'youtube music') return 0.5;
+    if (seedAlbum === candidateAlbum) return 1;
+    if (seedAlbum.includes(candidateAlbum) || candidateAlbum.includes(seedAlbum)) return 0.8;
+    return 0.2;
+  }
+
+  computeEraSimilarity(candidateVibe, seedVibe) {
+    if (!candidateVibe.year || !seedVibe.year) return 0.5;
+    return Math.max(0, 1 - (Math.abs(candidateVibe.year - seedVibe.year) / 20));
+  }
+
   /**
    * 5. User Listening History & Affinity: 0.0 - 1.0
    */
@@ -381,6 +458,22 @@ export class RecommendationEngine {
     if (gStat) {
       totalScore += (gStat.score || 0) * 0.5;
       counted += 0.5;
+    }
+
+    const candidateVibe = candidate.vibeMetadata || api.extractVibe(candidate);
+    const languageStat = userPrefs.languages?.[candidateVibe.language];
+    const moodStat = userPrefs.moods?.[candidateVibe.mood];
+    [languageStat, moodStat].forEach(stat => {
+      if (stat) {
+        totalScore += (stat.score || 0) * 0.5;
+        counted += 0.5;
+      }
+    });
+
+    const trackStat = userPrefs.tracks?.[candidate.id] || userPrefs.tracks?.[candidate.videoId];
+    if (trackStat) {
+      totalScore += ((trackStat.replays || 0) * 1.5) + ((trackStat.completions || 0) * 0.75);
+      counted += 1;
     }
 
     if (counted === 0) {

@@ -579,6 +579,10 @@ class MusicAPI {
     const text = `${title} ${artist}`.toLowerCase();
     if (/[\u0900-\u097F]/.test(text)) return 'hindi';
     if (/[\u0A00-\u0A7F]/.test(text)) return 'punjabi';
+    if (/[\u0980-\u09FF]/.test(text)) return 'bengali';
+    if (/[\u0B80-\u0BFF]/.test(text)) return 'tamil';
+    if (/[\u0C00-\u0C7F]/.test(text)) return 'telugu';
+    if (/\b(bhojpuri|pawan singh|khesari lal|shilpi raj|neelkamal singh|ritesh pandey|ankush raja|antra singh|kalpana patowary|bhojpuriya)\b/i.test(text)) return 'bhojpuri';
     if (/\b(punjabi|dhillon|sidhu|diljit|karan aujla|shubh|jassi|yaar|gabru|patiala|munda|kudi|bhangra|jatt)\b/i.test(text)) return 'punjabi';
     if (/\b(arijit|pritam|shreya|neha kakkar|kumar sanu|alka|alka yagnik|sonu nigam|jubin|badshah|atif aslam|mohit chauhan|jasleen royal|amit trivedi|shankar mahadevan|tulsi kumar|asees kaur|varun jain|anuv jain|a\.r\. rahman|ar rahman|t-series|bollywood|kesariya|tum|dil|pyar|ishq|tera|teri|meri|hum|saath|raat|zindagi|aashiqui|channa|deewani|geet|dard|sanam)\b/i.test(text)) return 'hindi';
     return 'english';
@@ -597,9 +601,15 @@ class MusicAPI {
     if (/acoustic|unplugged|piano|guitar/.test(text)) genreTags.add('acoustic');
     if (/bollywood|hindi|arijit|pritam|t-series/.test(text)) genreTags.add('bollywood');
     if (/punjabi|dhillon|sidhu|diljit|shubh|jatt|bhangra/.test(text)) genreTags.add('punjabi');
+    if (/bhojpuri|pawan singh|khesari lal|shilpi raj|bhojpuriya/.test(text)) genreTags.add('bhojpuri');
     if (/sufi|qawwali/.test(text)) genreTags.add('sufi');
     if (/remix|dance|party|bhangra|club/.test(text)) genreTags.add('dance');
     if (genreTags.size === 0) genreTags.add(language === 'english' ? 'pop' : language);
+
+    const yearMatch = text.match(/\b(19|20)\d{2}\b/);
+    const energy = mood === 'energetic' || genreTags.has('dance') ? 0.85
+      : mood === 'happy' ? 0.7
+        : mood === 'sad' || mood === 'chill' ? 0.3 : 0.5;
 
     return {
       artist,
@@ -609,13 +619,16 @@ class MusicAPI {
       genreTags: [...genreTags],
       tone: mood === 'sad' ? 'melancholic' : mood === 'romantic' ? 'warm' : mood === 'energetic' ? 'driving' : 'soft',
       acoustic: genreTags.has('acoustic'),
-      tempo: mood === 'energetic' || genreTags.has('dance') ? 'upbeat' : 'slow-mid'
+      tempo: mood === 'energetic' || genreTags.has('dance') ? 'upbeat' : 'slow-mid',
+      energy,
+      year: yearMatch ? Number(yearMatch[0]) : null
     };
   }
 
   filterRelatedTracks(seedTrack, candidates, limit) {
     const seedVibe = seedTrack.vibeMetadata || this.extractVibe(seedTrack);
-    if (!['hindi', 'punjabi'].includes(seedVibe.language)) return [];
+    const supportedLanguages = ['hindi', 'bhojpuri', 'punjabi', 'tamil', 'telugu', 'bengali', 'english'];
+    if (!supportedLanguages.includes(seedVibe.language)) return [];
     const seedKey = seedTrack.videoId || seedTrack.id;
     const seen = new Set([seedKey]);
     return (Array.isArray(candidates) ? candidates : []).filter(candidate => {

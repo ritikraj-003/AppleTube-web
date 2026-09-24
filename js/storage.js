@@ -328,7 +328,10 @@ export class StorageManager {
         artists: parsed.artists || {},
         genres: parsed.genres || {},
         tracks: parsed.tracks || {},
-        recentTrackIds: Array.isArray(parsed.recentTrackIds) ? parsed.recentTrackIds : []
+        languages: parsed.languages || {},
+        moods: parsed.moods || {},
+        recentTrackIds: Array.isArray(parsed.recentTrackIds) ? parsed.recentTrackIds : [],
+        sessionTrackIds: Array.isArray(parsed.sessionTrackIds) ? parsed.sessionTrackIds : []
       };
     } catch (e) {
       console.warn('Error reading user preferences', e);
@@ -340,8 +343,11 @@ export class StorageManager {
     return {
       artists: {},
       genres: {},
+      languages: {},
+      moods: {},
       tracks: {},
-      recentTrackIds: []
+      recentTrackIds: [],
+      sessionTrackIds: []
     };
   }
 
@@ -379,11 +385,19 @@ export class StorageManager {
       const prefs = this.getUserPreferences();
       const trackId = String(track.id);
       const artists = this.parseArtists(track.artist);
-      const genre = track.mood || track.genre || 'chill';
+      const vibe = track.vibeMetadata || {};
+      const language = String(track.language || vibe.language || 'unknown').toLowerCase();
+      const mood = String(track.mood || vibe.mood || 'chill').toLowerCase();
+      const genre = String(track.genre || vibe.genreTags?.[0] || mood || 'unknown').toLowerCase();
+      const profileBucket = (bucket, key, name = key) => {
+        if (!key || key === 'unknown') return null;
+        if (!prefs[bucket][key]) prefs[bucket][key] = { name, playCount: 0, completions: 0, skips: 0, likes: 0, score: 0 };
+        return prefs[bucket][key];
+      };
 
       // 1. Update track stats
       if (!prefs.tracks[trackId]) {
-        prefs.tracks[trackId] = { playCount: 0, completions: 0, skips: 0, lastPlayed: 0 };
+        prefs.tracks[trackId] = { playCount: 0, completions: 0, skips: 0, replays: 0, lastPlayed: 0 };
       }
       const tStat = prefs.tracks[trackId];
 
@@ -392,6 +406,7 @@ export class StorageManager {
         tStat.lastPlayed = Date.now();
         // Add to recentTrackIds
         prefs.recentTrackIds = [trackId, ...(prefs.recentTrackIds || []).filter(id => id !== trackId)].slice(0, 40);
+        prefs.sessionTrackIds = [trackId, ...(prefs.sessionTrackIds || []).filter(id => id !== trackId)].slice(0, 20);
 
         // Update artist play counts
         artists.forEach(art => {
@@ -400,12 +415,11 @@ export class StorageManager {
           prefs.artists[key].playCount += 1;
         });
 
-        // Update genre play counts
-        if (genre) {
-          const gKey = genre.toLowerCase();
-          if (!prefs.genres[gKey]) prefs.genres[gKey] = { name: genre, playCount: 0, completions: 0, skips: 0, likes: 0, score: 0 };
-          prefs.genres[gKey].playCount += 1;
-        }
+        const languageStat = profileBucket('languages', language, language);
+        const moodStat = profileBucket('moods', mood, mood);
+        const genreStat = profileBucket('genres', genre, genre);
+        [languageStat, moodStat, genreStat].forEach(stat => { if (stat) stat.playCount += 1; });
+        if (tStat.playCount > 1) tStat.replays = (tStat.replays || 0) + 1;
       } else if (eventType === 'complete') {
         tStat.completions = (tStat.completions || 0) + 1;
         artists.forEach(art => {
@@ -415,6 +429,8 @@ export class StorageManager {
         if (genre && prefs.genres[genre.toLowerCase()]) {
           prefs.genres[genre.toLowerCase()].completions = (prefs.genres[genre.toLowerCase()].completions || 0) + 1;
         }
+        if (prefs.languages[language]) prefs.languages[language].completions = (prefs.languages[language].completions || 0) + 1;
+        if (prefs.moods[mood]) prefs.moods[mood].completions = (prefs.moods[mood].completions || 0) + 1;
       } else if (eventType === 'skip') {
         // Only count as early skip if played for less than 25 seconds
         const playedSec = details.playedSeconds || 0;
@@ -427,6 +443,8 @@ export class StorageManager {
           if (genre && prefs.genres[genre.toLowerCase()]) {
             prefs.genres[genre.toLowerCase()].skips = (prefs.genres[genre.toLowerCase()].skips || 0) + 1;
           }
+          if (prefs.languages[language]) prefs.languages[language].skips = (prefs.languages[language].skips || 0) + 1;
+          if (prefs.moods[mood]) prefs.moods[mood].skips = (prefs.moods[mood].skips || 0) + 1;
         }
       } else if (eventType === 'like') {
         artists.forEach(art => {
@@ -439,6 +457,8 @@ export class StorageManager {
           if (!prefs.genres[gKey]) prefs.genres[gKey] = { name: genre, playCount: 0, completions: 0, skips: 0, likes: 0, score: 0 };
           prefs.genres[gKey].likes = (prefs.genres[gKey].likes || 0) + 1;
         }
+        if (prefs.languages[language]) prefs.languages[language].likes = (prefs.languages[language].likes || 0) + 1;
+        if (prefs.moods[mood]) prefs.moods[mood].likes = (prefs.moods[mood].likes || 0) + 1;
       } else if (eventType === 'unlike') {
         artists.forEach(art => {
           const key = art.toLowerCase();
@@ -447,6 +467,8 @@ export class StorageManager {
         if (genre && prefs.genres[genre.toLowerCase()] && prefs.genres[genre.toLowerCase()].likes > 0) {
           prefs.genres[genre.toLowerCase()].likes -= 1;
         }
+        if (prefs.languages[language] && prefs.languages[language].likes > 0) prefs.languages[language].likes -= 1;
+        if (prefs.moods[mood] && prefs.moods[mood].likes > 0) prefs.moods[mood].likes -= 1;
       }
 
       // Re-calculate scores for affected artists & genres
@@ -461,6 +483,11 @@ export class StorageManager {
         const g = prefs.genres[genre.toLowerCase()];
         g.score = (g.completions * 2.0) + (g.playCount * 1.0) + (g.likes * 3.0) - (g.skips * 1.5);
       }
+      [language, mood].forEach((key, index) => {
+        const bucket = index === 0 ? prefs.languages : prefs.moods;
+        const stat = bucket[key];
+        if (stat) stat.score = (stat.completions * 2.0) + (stat.playCount * 1.0) + (stat.likes * 3.0) - (stat.skips * 1.5);
+      });
 
       this.saveUserPreferences(prefs);
     } catch (e) {
