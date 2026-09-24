@@ -575,10 +575,67 @@ class MusicAPI {
     return meta[moodKey] || meta.chill;
   }
 
+  detectLanguage(title = '', artist = '') {
+    const text = `${title} ${artist}`.toLowerCase();
+    if (/[\u0900-\u097F]/.test(text)) return 'hindi';
+    if (/[\u0A00-\u0A7F]/.test(text)) return 'punjabi';
+    if (/\b(punjabi|dhillon|sidhu|diljit|karan aujla|shubh|jassi|yaar|gabru|patiala|munda|kudi|bhangra|jatt)\b/i.test(text)) return 'punjabi';
+    if (/\b(arijit|pritam|shreya|neha kakkar|kumar sanu|alka|sonu nigam|jubin|badshah|t-series|bollywood|kesariya|tum|dil|pyar|ishq|tera|teri|meri|hum|saath|raat|zindagi|aashiqui|channa|deewani|geet|dard|sanam)\b/i.test(text)) return 'hindi';
+    return 'english';
+  }
+
+  extractVibe(track) {
+    const title = track?.title || '';
+    const artist = track?.artist || '';
+    const album = track?.album || '';
+    const text = `${title} ${artist} ${album}`.toLowerCase();
+    const mood = track?.mood || this.detectMood(track);
+    const language = this.detectLanguage(title, artist);
+    const genreTags = new Set();
+
+    if (/lo[- ]?fi|chillhop|study|ambient/.test(text)) genreTags.add('lo-fi');
+    if (/acoustic|unplugged|piano|guitar/.test(text)) genreTags.add('acoustic');
+    if (/bollywood|hindi|arijit|pritam|t-series/.test(text)) genreTags.add('bollywood');
+    if (/punjabi|dhillon|sidhu|diljit|shubh|jatt|bhangra/.test(text)) genreTags.add('punjabi');
+    if (/sufi|qawwali/.test(text)) genreTags.add('sufi');
+    if (/remix|dance|party|bhangra|club/.test(text)) genreTags.add('dance');
+    if (genreTags.size === 0) genreTags.add(language === 'english' ? 'pop' : language);
+
+    return {
+      artist,
+      mood,
+      language,
+      region: language === 'punjabi' ? 'Punjab' : language === 'hindi' ? 'India' : 'International',
+      genreTags: [...genreTags],
+      tone: mood === 'sad' ? 'melancholic' : mood === 'romantic' ? 'warm' : mood === 'energetic' ? 'driving' : 'soft',
+      acoustic: genreTags.has('acoustic'),
+      tempo: mood === 'energetic' || genreTags.has('dance') ? 'upbeat' : 'slow-mid'
+    };
+  }
+
+  filterRelatedTracks(seedTrack, candidates, limit) {
+    const seedVibe = seedTrack.vibeMetadata || this.extractVibe(seedTrack);
+    const seedKey = seedTrack.videoId || seedTrack.id;
+    const seen = new Set([seedKey]);
+    return (Array.isArray(candidates) ? candidates : []).filter(candidate => {
+      const key = candidate?.videoId || candidate?.id;
+      if (!key || seen.has(key)) return false;
+      const candidateVibe = this.extractVibe(candidate);
+      const sameLanguage = candidateVibe.language === seedVibe.language ||
+        (['hindi', 'punjabi'].includes(candidateVibe.language) && ['hindi', 'punjabi'].includes(seedVibe.language));
+      if (!sameLanguage) return false;
+      candidate.mood = candidateVibe.mood;
+      candidate.vibeMetadata = candidateVibe;
+      seen.add(key);
+      return true;
+    }).slice(0, limit);
+  }
+
   // --- Related / Same Mood Continuation Tracks ---
   async getRelatedTracks(track, overrideMood = null, limit = 20) {
     if (!track) return { mood: 'chill', tracks: [] };
-    const mood = overrideMood || this.detectMood(track);
+    const vibe = this.extractVibe(track);
+    const mood = overrideMood || vibe.mood;
     const videoId = track.videoId || (track.id?.startsWith('yt_') ? track.id.replace('yt_', '') : '');
 
     // 1. Try Live Server Backend
@@ -598,9 +655,12 @@ class MusicAPI {
         if (res.ok) {
           const data = await res.json();
           if (data && Array.isArray(data.tracks) && data.tracks.length > 0) {
+            const relatedTracks = this.filterRelatedTracks(track, data.tracks, limit);
+            if (relatedTracks.length === 0) return { mood, vibe, tracks: [] };
             return {
               mood: data.mood || mood,
-              tracks: data.tracks
+              vibe,
+              tracks: relatedTracks
             };
           }
         }
@@ -609,17 +669,19 @@ class MusicAPI {
       }
     }
 
-    // 2. Client-side fallback: search for same artist + mood or general mood tracks
-    const searchQuery = track.artist && track.artist !== 'YouTube Artist'
-      ? `${track.artist} ${mood} songs`
-      : `best ${mood} songs hits`;
-
-    const searched = await this.searchSongs(searchQuery, limit);
-    const filtered = (searched || []).filter(t => t.id !== track.id);
-    filtered.forEach(t => { t.mood = this.detectMood(t); });
+    // 2. Targeted YouTube-style radio searches, ordered from strongest to broadest.
+    const artistQuery = track.artist && track.artist !== 'YouTube Artist'
+      ? `${track.artist} ${mood} ${vibe.language} songs similar`
+      : '';
+    const genreQuery = `${vibe.genreTags.join(' ')} ${mood} ${vibe.language} songs similar`;
+    const titleQuery = track.title ? `${track.title} radio` : '';
+    const queries = [artistQuery, genreQuery, titleQuery].filter(Boolean);
+    const batches = await Promise.all(queries.map(query => this.searchSongs(query, limit)));
+    const filtered = this.filterRelatedTracks(track, batches.flat(), limit);
 
     return {
       mood: mood,
+      vibe,
       tracks: filtered
     };
   }

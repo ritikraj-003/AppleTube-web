@@ -42,6 +42,7 @@ export class RecommendationEngine {
     const limit = options.limit || 20;
     const currentQueueIds = new Set(options.existingQueueIds || []);
     const seedId = String(seedTrack.id || seedTrack.videoId || '');
+    const seedVibe = seedTrack.vibeMetadata || api.extractVibe(seedTrack);
 
     try {
       // 1. Fetch genuine candidates from YouTube InnerTube watch-next API
@@ -50,12 +51,17 @@ export class RecommendationEngine {
 
       // 2. If candidates are sparse (< 12), perform targeted discovery search
       const primaryArtist = StorageManager.parseArtists(seedTrack.artist)[0] || seedTrack.artist;
-      if (candidates.length < 12 && primaryArtist && primaryArtist !== 'YouTube Artist') {
+      if (candidates.length < 12) {
         try {
-          const discoveryQuery = `${primaryArtist} top hits songs`;
-          const extra = await api.searchSongs(discoveryQuery, 10);
-          if (Array.isArray(extra)) {
-            candidates.push(...extra);
+          const discoveryQueries = [
+            primaryArtist && primaryArtist !== 'YouTube Artist'
+              ? `${primaryArtist} ${seedVibe.mood} ${seedVibe.language} similar songs`
+              : '',
+            `${seedTrack.title || ''} radio ${seedVibe.genreTags.join(' ')}`
+          ].filter(Boolean);
+          const batches = await Promise.all(discoveryQueries.map(query => api.searchSongs(query, 10)));
+          for (const batch of batches) {
+            if (Array.isArray(batch)) candidates.push(...batch);
           }
         } catch (e) {
           console.warn('[RecommendationEngine] Artist discovery query failed', e);
@@ -164,6 +170,9 @@ export class RecommendationEngine {
    * score = (artistSim * 0.25) + (genreSim * 0.20) + (langSim * 0.10) + (songSim * 0.20) + (userPref * 0.15) + (popRel * 0.10)
    */
   scoreCandidate(candidate, seedTrack, userPrefs, rankIndex, totalCandidates) {
+    const seedVibe = seedTrack.vibeMetadata || api.extractVibe(seedTrack);
+    const candidateVibe = candidate.vibeMetadata || api.extractVibe(candidate);
+    const artistTier = this.computeArtistTier(candidate, seedTrack);
     const artistSim = this.computeArtistSimilarity(candidate, seedTrack);
     const genreSim = this.computeGenreSimilarity(candidate, seedTrack);
     const langSim = this.computeLanguageSimilarity(candidate, seedTrack);
@@ -171,16 +180,21 @@ export class RecommendationEngine {
     const userPref = this.computeUserPreferenceScore(candidate, userPrefs);
     const popRel = this.computePopularityRelevance(rankIndex, totalCandidates);
 
-    const total = 
-      (artistSim * this.weights.artistSimilarity) +
-      (genreSim * this.weights.genreSimilarity) +
-      (langSim * this.weights.languageSimilarity) +
-      (songSim * this.weights.songSimilarity) +
-      (userPref * this.weights.userHistoryPreference) +
-      (popRel * this.weights.popularityRelevance);
+    const moodSim = seedVibe.mood === candidateVibe.mood ? 1 : genreSim * 0.65;
+    const total =
+      (artistTier * 0.40) +
+      (moodSim * 0.22) +
+      (genreSim * 0.16) +
+      (langSim * 0.12) +
+      (songSim * 0.05) +
+      (userPref * 0.03) +
+      (popRel * 0.02);
 
     return {
       total: Math.max(0, Math.min(1, total)),
+      artistTier,
+      moodSim,
+      vibe: candidateVibe,
       artistSim,
       genreSim,
       langSim,
@@ -223,12 +237,36 @@ export class RecommendationEngine {
     return 0.2;
   }
 
+  computeArtistTier(candidate, seedTrack) {
+    const seedArtists = StorageManager.parseArtists(seedTrack.artist).map(artist => artist.toLowerCase());
+    const candidateArtists = StorageManager.parseArtists(candidate.artist).map(artist => artist.toLowerCase());
+    if (seedArtists.some(seed => candidateArtists.some(candidateName => candidateName === seed || candidateName.includes(seed) || seed.includes(candidateName)))) {
+      return 1;
+    }
+
+    const peerGroups = [
+      ['arijit singh', 'atif aslam', 'mohit chauhan', 'jubin nautiyal', 'jasleen royal', 'shreya ghoshal'],
+      ['karan aujla', 'ap dhillon', 'diljit dosanjh', 'shubh', 'sidhu moose wala', 'guru randhawa']
+    ];
+    const samePeerGroup = peerGroups.some(group =>
+      seedArtists.some(seed => group.some(peer => seed.includes(peer) || peer.includes(seed))) &&
+      candidateArtists.some(candidateName => group.some(peer => candidateName.includes(peer) || peer.includes(candidateName)))
+    );
+    return samePeerGroup ? 0.78 : 0.18;
+  }
+
   /**
    * 2. Genre / Mood Similarity: 0.0 - 1.0
    */
   computeGenreSimilarity(candidate, seedTrack) {
-    const seedMood = seedTrack.mood || api.detectMood(seedTrack);
-    const candMood = candidate.mood || api.detectMood(candidate);
+    const seedVibe = seedTrack.vibeMetadata || api.extractVibe(seedTrack);
+    const candidateVibe = candidate.vibeMetadata || api.extractVibe(candidate);
+    const seedMood = seedVibe.mood;
+    const candMood = candidateVibe.mood;
+
+    const sharedGenres = seedVibe.genreTags.filter(tag => candidateVibe.genreTags.includes(tag)).length;
+    if (sharedGenres > 0 && seedMood === candMood) return 1;
+    if (sharedGenres > 0) return 0.8;
 
     if (seedMood === candMood) {
       return 1.0;
@@ -283,26 +321,7 @@ export class RecommendationEngine {
   }
 
   detectLanguage(title = '', artist = '') {
-    const text = `${title} ${artist}`.toLowerCase();
-
-    // Devanagari Unicode (Hindi, Marathi, etc.)
-    if (/[\u0900-\u097F]/.test(text)) return 'hindi';
-    // Gurmukhi Unicode (Punjabi)
-    if (/[\u0A00-\u0A7F]/.test(text)) return 'punjabi';
-    // Tamil / Telugu / Malayalam / Kannada
-    if (/[\u0B80-\u0BFF\u0C00-\u0C7F\u0D00-\u0D7F]/.test(text)) return 'south-indian';
-
-    // Romanized Punjabi keywords
-    if (/\b(punjabi|dhillon|sidhu|diljit|karan aujla|shubh|jassi|yaar|gabru|patiala|munda|kudi|bhangra|jatt)\b/i.test(text)) {
-      return 'punjabi';
-    }
-
-    // Romanized Hindi / Bollywood keywords
-    if (/\b(arijit|pritam|shreya|neha kakkar|kumar sanu|alka|sonu nigam|jubin|badshah|t-series|bollywood|kesariya|tum|dil|pyar|ishq|tera|teri|meri|hum|saath|raat|zindagi|aashiqui|channa|tere|deewani|geet|dard|sanam)\b/i.test(text)) {
-      return 'hindi';
-    }
-
-    return 'english';
+    return api.detectLanguage(title, artist);
   }
 
   /**

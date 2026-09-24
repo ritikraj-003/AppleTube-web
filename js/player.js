@@ -654,6 +654,7 @@ class AudioPlayer {
     this.notify('trackChange', this.currentTrack);
 
     // Detect and notify song mood, then pre-fetch same-mood continuation
+    this.currentTrack.vibeMetadata = api.extractVibe(this.currentTrack);
     const detectedMood = this.currentTrack.mood || api.detectMood(this.currentTrack);
     this.currentTrack.mood = detectedMood;
     this.currentMood = detectedMood;
@@ -1097,10 +1098,11 @@ class AudioPlayer {
     this.notify('suggestionsUpdate', { mood: targetMood, tracks: this.suggestedTracks, loading: true });
     try {
       const res = await api.getRelatedTracks(track, targetMood, 15);
-      const existingIds = new Set(this.queue.map(t => t.id));
+      const existingIds = new Set(this.queue.flatMap(item => [item.id, item.videoId].filter(Boolean)));
       existingIds.add(track.id);
+      if (track.videoId) existingIds.add(track.videoId);
       const remoteTracks = Array.isArray(res?.tracks)
-        ? res.tracks.filter(t => !existingIds.has(t.id))
+        ? res.tracks.filter(t => !existingIds.has(t.id) && !existingIds.has(t.videoId))
         : [];
       const fallbackTracks = this.getLocalSuggestionFallback(track, targetMood, existingIds);
       const seenIds = new Set();
@@ -1122,8 +1124,9 @@ class AudioPlayer {
   }
 
   getLocalSuggestionFallback(track, targetMood, excludedIds = null) {
-    const excluded = excludedIds || new Set(this.queue.map(item => item.id));
+    const excluded = excludedIds || new Set(this.queue.flatMap(item => [item.id, item.videoId].filter(Boolean)));
     excluded.add(track.id);
+    if (track.videoId) excluded.add(track.videoId);
     const libraryTracks = [
       ...StorageManager.getLikedSongs(),
       ...StorageManager.getPlaylists().flatMap(playlist => playlist.tracks || []),
@@ -1132,15 +1135,19 @@ class AudioPlayer {
     const candidates = [...this.queue, ...libraryTracks, ...CONFIG.CURATED_TRACKS, ...OVERALL_TRAVEL_SONGS];
     const seenIds = new Set();
     return candidates
-      .filter(candidate => candidate && !excluded.has(candidate.id))
+      .filter(candidate => {
+        const key = candidate?.videoId || candidate?.id;
+        return candidate && key && !excluded.has(candidate.id) && !excluded.has(candidate.videoId);
+      })
       .sort((a, b) => {
         const aScore = (a.mood === targetMood ? 2 : 0) + (a.artist === track.artist ? 1 : 0);
         const bScore = (b.mood === targetMood ? 2 : 0) + (b.artist === track.artist ? 1 : 0);
         return bScore - aScore;
       })
       .filter(candidate => {
-        if (seenIds.has(candidate.id)) return false;
-        seenIds.add(candidate.id);
+        const key = candidate.videoId || candidate.id;
+        if (seenIds.has(key)) return false;
+        seenIds.add(key);
         return true;
       })
       .slice(0, 10);
