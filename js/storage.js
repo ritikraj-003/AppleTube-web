@@ -533,4 +533,17 @@ export class StorageManager {
       return [];
     }
   }
+
+  /**
+   * Clear the current-session track list.
+   * Call this when the user starts a fresh discovery session so the
+   * recommendation engine doesn't penalise songs from a previous session.
+   */
+  static clearSessionTracks() {
+    try {
+      const prefs = this.getUserPreferences();
+      prefs.sessionTrackIds = [];
+      this.saveUserPreferences(prefs);
+    } catch (e) {}
+  }
 }

@@ -887,6 +887,7 @@ class App {
       const isLiked = StorageManager.toggleLike(player.currentTrack);
       this.updateLikeButton(isLiked);
       UIManager.showToast(isLiked ? 'Added to Favorites' : 'Removed from Favorites', 'success');
+      api.invalidateSuggestionsCache(); // refresh suggestions with updated favorites
       await auth.syncCollectionToServer();
       if (this.currentView === 'liked') {
         this.renderLikedView();
@@ -1147,6 +1148,7 @@ class App {
         const isLiked = StorageManager.toggleLike(player.currentTrack);
         this.updateLikeButton(isLiked);
         UIManager.showToast(isLiked ? 'Added to Favorites' : 'Removed from Favorites', 'success');
+        api.invalidateSuggestionsCache(); // refresh suggestions with updated favorites
         await auth.syncCollectionToServer();
         if (this.currentView === 'liked') {
           this.renderLikedView();

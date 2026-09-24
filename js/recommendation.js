@@ -190,10 +190,12 @@ export class RecommendationEngine {
 
   /**
    * Replenishment call when the active queue runs low.
+   * Passes existing queue IDs so we never re-queue songs already in the list.
+   * Also accepts options.sessionContext for session-aware repetition avoidance.
    */
-  async fetchMoreRecommendations(currentTrack, existingQueue = [], limit = 10) {
+  async fetchMoreRecommendations(currentTrack, existingQueue = [], limit = 10, options = {}) {
     const existingQueueIds = existingQueue.map(t => t.id || t.videoId).filter(Boolean);
-    return this.generateQueue(currentTrack, { limit, existingQueueIds });
+    return this.generateQueue(currentTrack, { limit, existingQueueIds, ...options });
   }
 
   // ─── Internal Helpers ────────────────────────────────────────────────────────

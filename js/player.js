@@ -129,8 +129,46 @@ class AudioPlayer {
   }
 
   bindVisibilityEvents() {
+    // Re-acquire wakeLock and resume AudioContext when the page becomes visible.
+    // This is critical on Android: the browser may suspend the AudioContext
+    // when the screen locks or the app backgrounds, causing audio to cut out.
     document.addEventListener('visibilitychange', async () => {
-      if (document.visibilityState === 'visible' && !this.audio.paused) {
+      if (document.visibilityState === 'visible') {
+        // Resume AudioContext if it was suspended by the browser
+        if (this.audioCtx && this.audioCtx.state === 'suspended') {
+          this.audioCtx.resume().catch(() => {});
+        }
+        // Re-acquire wakeLock if audio is playing
+        if (!this.audio.paused || this.isYtPlaying) {
+          await this.requestWakeLock();
+        }
+      } else if (document.visibilityState === 'hidden') {
+        // Page going hidden — wakeLock auto-releases on Android, we'll re-acquire on visible.
+        // Do NOT stop or pause audio here — that would break background playback.
+      }
+    });
+
+    // Handle Page Lifecycle API events (Android Chrome bfcache / freeze)
+    // 'freeze' fires when the page is being frozen (e.g., bfcached) — safe to no-op.
+    // 'resume' fires when the frozen page resumes.
+    window.addEventListener('freeze', () => {
+      // Do NOT pause audio — let the browser handle freeze naturally
+    });
+    window.addEventListener('resume', async () => {
+      if (this.audioCtx && this.audioCtx.state === 'suspended') {
+        this.audioCtx.resume().catch(() => {});
+      }
+      if (!this.audio.paused || this.isYtPlaying) {
+        await this.requestWakeLock();
+      }
+    });
+
+    // 'pageshow' fires when the page is shown from bfcache
+    window.addEventListener('pageshow', async (event) => {
+      if (event.persisted && (!this.audio.paused || this.isYtPlaying)) {
+        if (this.audioCtx && this.audioCtx.state === 'suspended') {
+          this.audioCtx.resume().catch(() => {});
+        }
         await this.requestWakeLock();
       }
     });
@@ -592,6 +630,10 @@ class AudioPlayer {
     this.queue = [track];
     this.currentIndex = 0;
 
+    // Reset session history when starting a new discovery session so the
+    // recommendation engine has a clean slate for repetition avoidance.
+    this.sessionHistory = [];
+
     this.notify('queueUpdate', {
       queue: this.queue,
       index: this.currentIndex,
@@ -668,7 +710,8 @@ class AudioPlayer {
         const moreRecs = await recommendationEngine.fetchMoreRecommendations(
           this.currentTrack,
           this.queue,
-          10
+          10,
+          { sessionContext: this.sessionHistory }  // pass session history so engine avoids repeats
         );
         if (moreRecs && moreRecs.length > 0) {
           this.recommendationQueue.push(...moreRecs);

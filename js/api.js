@@ -4,16 +4,23 @@
 
 import { CONFIG } from './config.js';
 import { OVERALL_TRAVEL_SONGS } from './travelData.js';
+import { StorageManager } from './storage.js';
 
 class MusicAPI {
   constructor() {
     this.searchCache = new Map();
-    this.suggestionsCache = new Map();
+    this.suggestionsCache = new Map(); // key → { data, timestamp }
+    this._SUGG_CACHE_TTL = 30 * 1000; // 30-second TTL so recent activity shows up quickly
     this.ytMirrorIndex = 0;
     this.saavnMirrorIndex = 0;
     this.audiusMirrorIndex = 0;
     this.radioMirrorIndex = 0;
     this.hasLiveBackend = null; // Autodetected on first call
+  }
+
+  /** Call this after user likes/unlikes a song so local suggestions refresh */
+  invalidateSuggestionsCache() {
+    this.suggestionsCache.clear();
   }
 
   // --- Helpers ---
@@ -147,10 +154,16 @@ class MusicAPI {
     }
     const trimmed = query.trim();
     const cacheKey = trimmed.toLowerCase();
-    if (this.suggestionsCache.has(cacheKey)) {
-      return this.suggestionsCache.get(cacheKey);
+    // TTL-aware cache check
+    const cached = this.suggestionsCache.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) < this._SUGG_CACHE_TTL) {
+      return cached.data;
     }
 
+    // Always compute local results immediately (fast, no network)
+    const localResult = this._buildLocalSuggestions(trimmed, cacheKey, limit);
+
+    // Attempt to enhance with live backend suggestions
     try {
       const res = await fetch(`/api/yt/suggestions?q=${encodeURIComponent(trimmed)}&limit=${limit}`, {
         signal: AbortSignal.timeout(2800)
@@ -158,25 +171,87 @@ class MusicAPI {
       if (res.ok) {
         const data = await res.json();
         if (data && typeof data === 'object') {
-          this.suggestionsCache.set(cacheKey, data);
-          return data;
+          // Merge: local song matches first (they are faster/more personalised),
+          // then append live suggestions that weren't already in local results.
+          const mergedSongs = [...localResult.songs];
+          const localIds = new Set(localResult.songs.map(s => s.id));
+          for (const s of (data.songs || [])) {
+            if (!localIds.has(s.id) && mergedSongs.length < limit) mergedSongs.push(s);
+          }
+          const merged = {
+            query: trimmed,
+            songs: mergedSongs,
+            suggestions: data.suggestions || localResult.suggestions
+          };
+          this.suggestionsCache.set(cacheKey, { data: merged, ts: Date.now() });
+          return merged;
         }
       }
     } catch (e) {
-      // Fallback below
+      // Fall through to local-only result
     }
 
-    // Client-side fallback if backend suggestion failed/offline
-    const matchingSongs = CONFIG.CURATED_TRACKS.filter(t =>
-      t.title.toLowerCase().includes(cacheKey) || t.artist.toLowerCase().includes(cacheKey)
-    ).slice(0, 4);
+    this.suggestionsCache.set(cacheKey, { data: localResult, ts: Date.now() });
+    return localResult;
+  }
 
-    const fallbackResult = {
-      query: trimmed,
-      suggestions: [trimmed],
-      songs: matchingSongs
+  /**
+   * Build search suggestions entirely from local data sources.
+   * Searches: liked songs, recent tracks, playlist tracks, curated tracks.
+   * Boosts recently-played and favorited songs for personalised ranking.
+   */
+  _buildLocalSuggestions(query, queryLower, limit = 8) {
+    let liked = [], recent = [], playlistTracks = [];
+    try {
+      liked         = StorageManager.getLikedSongs();
+      recent        = StorageManager.getRecentTracks();
+      playlistTracks = StorageManager.getPlaylists().flatMap(p => p.tracks || []);
+    } catch (e) {}
+
+    const likedIds  = new Set(liked.map(t => t.id));
+    const recentIds = new Set(recent.slice(0, 20).map(t => t.id));
+
+    // Gather candidates: liked > recent > playlist > curated (priority order for dedup)
+    const allCandidates = [...liked, ...recent, ...playlistTracks, ...CONFIG.CURATED_TRACKS];
+
+    // Deduplicate by id
+    const seen = new Set();
+    const unique = [];
+    for (const t of allCandidates) {
+      if (!t || !t.id || seen.has(t.id)) continue;
+      seen.add(t.id);
+      unique.push(t);
+    }
+
+    // Filter: partial, case-insensitive match on title, artist, or album
+    const matched = unique.filter(t => {
+      const haystack = `${t.title || ''} ${t.artist || ''} ${t.album || ''}`.toLowerCase();
+      return haystack.includes(queryLower);
+    });
+
+    // Sort by relevance score
+    matched.sort((a, b) => {
+      const score = (t) => {
+        const title  = (t.title  || '').toLowerCase();
+        const artist = (t.artist || '').toLowerCase();
+        let s = 0;
+        if (title.startsWith(queryLower))      s += 50;
+        else if (title.includes(queryLower))   s += 30;
+        if (artist.startsWith(queryLower))     s += 25;
+        else if (artist.includes(queryLower))  s += 15;
+        if (likedIds.has(t.id))                s += 20;
+        if (recentIds.has(t.id))               s += 10;
+        return s;
+      };
+      return score(b) - score(a);
+    });
+
+    const songs = matched.slice(0, limit);
+    return {
+      query,
+      songs,
+      suggestions: songs.length > 0 ? [] : [query]
     };
-    return fallbackResult;
   }
 
   // --- 2. Live YouTube Trending Music ---
