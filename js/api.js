@@ -576,15 +576,50 @@ class MusicAPI {
   }
 
   detectLanguage(title = '', artist = '') {
+    // Cache key: use first 80 chars of combined text to avoid expensive regex on identical strings
+    const cacheKey = `${title}||${artist}`.slice(0, 80);
+    if (this._langCache && this._langCache.has(cacheKey)) return this._langCache.get(cacheKey);
+    if (!this._langCache) this._langCache = new Map();
     const text = `${title} ${artist}`.toLowerCase();
-    if (/[\u0900-\u097F]/.test(text)) return 'hindi';
+
+    let lang = this._detectLanguageInternal(text);
+
+    // Evict cache if too large
+    if (this._langCache.size > 300) this._langCache.clear();
+    this._langCache.set(cacheKey, lang);
+    return lang;
+  }
+
+  _detectLanguageInternal(text) {
+    // CRITICAL ORDER: Bhojpuri uses Devanagari script — check by artist/keyword FIRST
+    // so Bhojpuri songs are not wrongly classified as Hindi.
+    if (/\b(bhojpuri|pawan singh|khesari lal yadav|khesari lal|shilpi raj|neelkamal singh|ritesh pandey|ankush raja|antra singh priyanka|antra singh|kalpana patowary|bhojpuriya|dinesh lal yadav|nirahua|gunjan singh|samar singh|awadhesh premi|sharda sinha|manoj tiwari|ravi kishan|devi|kajal raghwani|amrapali dubey)\b/i.test(text)) return 'bhojpuri';
+
+    // Punjabi Gurmukhi script is the strongest signal
     if (/[\u0A00-\u0A7F]/.test(text)) return 'punjabi';
+
+    // Devanagari script covers Hindi, Marathi, Bhojpuri — already excluded Bhojpuri above
+    if (/[\u0900-\u097F]/.test(text)) return 'hindi';
+
     if (/[\u0980-\u09FF]/.test(text)) return 'bengali';
     if (/[\u0B80-\u0BFF]/.test(text)) return 'tamil';
     if (/[\u0C00-\u0C7F]/.test(text)) return 'telugu';
-    if (/\b(bhojpuri|pawan singh|khesari lal|shilpi raj|neelkamal singh|ritesh pandey|ankush raja|antra singh|kalpana patowary|bhojpuriya)\b/i.test(text)) return 'bhojpuri';
-    if (/\b(punjabi|dhillon|sidhu|diljit|karan aujla|shubh|jassi|yaar|gabru|patiala|munda|kudi|bhangra|jatt)\b/i.test(text)) return 'punjabi';
-    if (/\b(arijit|pritam|shreya|neha kakkar|kumar sanu|alka|alka yagnik|sonu nigam|jubin|badshah|atif aslam|mohit chauhan|jasleen royal|amit trivedi|shankar mahadevan|tulsi kumar|asees kaur|varun jain|anuv jain|a\.r\. rahman|ar rahman|t-series|bollywood|kesariya|tum|dil|pyar|ishq|tera|teri|meri|hum|saath|raat|zindagi|aashiqui|channa|deewani|geet|dard|sanam)\b/i.test(text)) return 'hindi';
+    if (/[\u0D00-\u0D7F]/.test(text)) return 'malayalam';
+    if (/[\u0C80-\u0CFF]/.test(text)) return 'kannada';
+
+    // Keyword-based detection for Latin-script titles (artist/label names are reliable signals)
+    // Punjabi keywords (must come before Hindi to avoid Punjabi artists being tagged Hindi)
+    if (/\b(punjabi|diljit|karan aujla|ap dhillon|sidhu moose wala|shubh|jass manak|ammy virk|gippy grewal|harrdy sandhu|jassi gill|mankirt aulakh|guru randhawa|badsha|dhillon|gabru|jatt|bhangra|chandigarh|patiala|ludhiana|speed records|t-series apna punjab|white hill music)\b/i.test(text)) return 'punjabi';
+
+    // Tamil keywords
+    if (/\b(tamil|kollywood|anirudh|yuvan|harris jayaraj|sid sriram|sid sri ram|rahman tamil|a\.r\. rahman tamil|dhanush|vijay|ajith|rajinikanth|ilayaraja|vijay antony|vijay sethupathi|sivakarthikeyan|karthik|andrea jeremiah|chinmayi|sony music south tamil|sun tv)\b/i.test(text)) return 'tamil';
+
+    // Telugu keywords
+    if (/\b(telugu|tollywood|s\.s\. rajamouli|ss rajamouli|devi sri prasad|thaman|prabhas|allu arjun|ram charan|ntr|mahesh babu|anirudh telugu|adivi sesh|sid sriram telugu|shreya ghoshal telugu|chinmayi telugu|sony music south telugu|aditya music|lahari music|t-series telugu)\b/i.test(text)) return 'telugu';
+
+    // Hindi Bollywood keywords
+    if (/\b(arijit singh|atif aslam|pritam|shreya ghoshal|neha kakkar|kumar sanu|alka yagnik|sonu nigam|jubin nautiyal|badshah|mohit chauhan|jasleen royal|amit trivedi|shankar mahadevan|tulsi kumar|asees kaur|varun jain|anuv jain|a\.r\. rahman|ar rahman|vishal mishra|sachet tandon|parampara thakur|armaan malik|b praak|darshan raval|javed ali|shaan|udit narayan|t-series|zee music|saregama|yrf music|bollywood|hindi film|hindi song|kesariya|tum|dil|pyar|ishq|zindagi|aashiqui|channa|dard|sanam|humraah|raataan|bekhayali)\b/i.test(text)) return 'hindi';
+
     return 'english';
   }
 
@@ -625,22 +660,27 @@ class MusicAPI {
     };
   }
 
-  filterRelatedTracks(seedTrack, candidates, limit) {
+  filterRelatedTracks(seedTrack, candidates, limit, strict = true) {
     const seedVibe = seedTrack.vibeMetadata || this.extractVibe(seedTrack);
-    const supportedLanguages = ['hindi', 'bhojpuri', 'punjabi', 'tamil', 'telugu', 'bengali', 'english'];
+    const supportedLanguages = ['hindi', 'bhojpuri', 'punjabi', 'tamil', 'telugu', 'bengali', 'malayalam', 'kannada', 'english'];
     if (!supportedLanguages.includes(seedVibe.language)) return [];
     const seedKey = seedTrack.videoId || seedTrack.id;
     const seen = new Set([seedKey]);
-    return (Array.isArray(candidates) ? candidates : []).filter(candidate => {
+    const filtered = (Array.isArray(candidates) ? candidates : []).filter(candidate => {
       const key = candidate?.videoId || candidate?.id;
       if (!key || seen.has(key)) return false;
       const candidateVibe = this.extractVibe(candidate);
-      if (candidateVibe.language !== seedVibe.language) return false;
+      if (strict && candidateVibe.language !== seedVibe.language) return false;
       candidate.mood = candidateVibe.mood;
       candidate.vibeMetadata = candidateVibe;
       seen.add(key);
       return true;
     }).slice(0, limit);
+    // If strict filtering yields too few results, relax language requirement
+    if (strict && filtered.length < 5) {
+      return this.filterRelatedTracks(seedTrack, candidates, limit, false);
+    }
+    return filtered;
   }
 
   // --- Related / Same Mood Continuation Tracks ---

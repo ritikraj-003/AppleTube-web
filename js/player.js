@@ -370,14 +370,11 @@ class AudioPlayer {
       StorageManager.recordPlaybackEvent(this.currentTrack, 'complete');
     }
 
+    // ── Repeat One: replay the current track ─────────────────────────────
     if (this.repeatMode === 'one') {
       if (this.usingYtPlayer && this.ytPlayer) {
-        if (typeof this.ytPlayer.seekTo === 'function') {
-          this.ytPlayer.seekTo(0, true);
-        }
-        if (typeof this.ytPlayer.playVideo === 'function') {
-          this.ytPlayer.playVideo();
-        }
+        if (typeof this.ytPlayer.seekTo === 'function') this.ytPlayer.seekTo(0, true);
+        if (typeof this.ytPlayer.playVideo === 'function') this.ytPlayer.playVideo();
       } else {
         this.audio.currentTime = 0;
         this.audio.play().catch(() => {});
@@ -385,16 +382,45 @@ class AudioPlayer {
       return;
     }
 
-    const canAutoAdvance = this.isContinuousPlaybackAllowed();
-
-    if (this.hasNext() && canAutoAdvance) {
+    // ── Has next item in the current queue ───────────────────────────────
+    if (this.hasNext()) {
       this.next(true);
-    } else if (this.repeatMode === 'all') {
+      return;
+    }
+
+    // ── End of queue — behaviour depends on playback mode ────────────────
+
+    // DETERMINISTIC MODE (Favorites / User-Created Playlist)
+    // The Recommendation Engine must NEVER inject songs here.
+    if (this.isDeterministicPlayback()) {
+      if (this.repeatMode === 'all') {
+        // Repeat playlist: restart from the beginning
+        this.currentIndex = 0;
+        this.loadAndPlayCurrent();
+      } else if (this.isShuffle) {
+        // Shuffle within the deterministic set
+        const shuffled = this.shuffleArray([...this.originalQueue]);
+        this.queue = shuffled;
+        this.originalQueue = [...shuffled];
+        this.currentIndex = 0;
+        this.notify('queueUpdate', { queue: this.queue, index: this.currentIndex, seedTrack: this.seedTrack });
+        this.loadAndPlayCurrent();
+      } else {
+        // Clean stop — do NOT inject recommendations
+        this.notify('playbackChange', false);
+      }
+      return;
+    }
+
+    // REPEAT ALL in browse / discovery mode
+    if (this.repeatMode === 'all') {
       this.currentIndex = 0;
       this.loadAndPlayCurrent();
-    } else if (this.isDeterministicPlayback()) {
-      this.notify('playbackChange', false);
-    } else if (canAutoAdvance && this.recommendationQueue.length > 0) {
+      return;
+    }
+
+    // DISCOVERY MODE: extend queue from recommendation engine
+    if (this.smartMoodAutoplay && this.recommendationQueue.length > 0) {
       const nextTrack = this.recommendationQueue.shift();
       this.queue.push(nextTrack);
       this.currentIndex = this.queue.length - 1;
@@ -407,11 +433,16 @@ class AudioPlayer {
       });
       this.loadAndPlayCurrent();
       this.checkAndReplenishRecommendations();
-    } else if (canAutoAdvance && this.suggestedTracks.length > 0) {
-      this.playNextSuggestedMoodTrack();
-    } else {
-      this.notify('playbackChange', false);
+      return;
     }
+
+    if (this.smartMoodAutoplay && this.suggestedTracks.length > 0) {
+      this.playNextSuggestedMoodTrack();
+      return;
+    }
+
+    // Default: stop playback
+    this.notify('playbackChange', false);
   }
 
   // --- Enhanced Android Media Session API ---
@@ -486,12 +517,29 @@ class AudioPlayer {
   }
 
   // --- Core Playback Controls ---
-  isContinuousPlaybackAllowed() {
-    return this.smartMoodAutoplay || ['favorites', 'playlist'].includes(this.playbackContext.type);
+
+  /**
+   * Returns true when it is safe for playback to auto-advance to the next
+   * item in the current queue. This covers ALL modes — the caller is
+   * responsible for deciding whether that next item may come from
+   * recommendations or must be the next deterministic entry.
+   */
+  _isAutoAdvanceAllowed() {
+    return this.smartMoodAutoplay || this.isDeterministicPlayback();
   }
 
+  /**
+   * Returns true when the player is in a mode where song order is
+   * fully controlled by the user (Favorites or User-Created Playlist).
+   * In this mode the Recommendation Engine must NEVER inject songs.
+   */
   isDeterministicPlayback() {
     return ['favorites', 'playlist'].includes(this.playbackContext.type);
+  }
+
+  // Backwards-compatible alias (used by smartMoodAutoplay check paths)
+  isContinuousPlaybackAllowed() {
+    return this.smartMoodAutoplay || this.isDeterministicPlayback();
   }
 
   playTrack(track, queue = null, context = { type: 'browse' }) {
@@ -503,6 +551,17 @@ class AudioPlayer {
       this.seedTrack = track;
       this.userQueue = [];
       this.recommendationQueue = [];
+
+      // IMPORTANT: For deterministic playback (favorites/playlist) we must
+      // never allow the recommendation engine's previously computed
+      // suggestedTracks to bleed into playback after the queue ends.
+      if (this.isDeterministicPlayback()) {
+        this.suggestedTracks = [];
+      }
+
+      // For deterministic modes, shuffle is only applied when the user
+      // explicitly enables it AFTER entering the mode — on initial entry
+      // always respect the source order so the user's intent is honoured.
       this.originalQueue = [...queue];
       this.queue = this.isShuffle ? this.shuffleArray([...queue]) : [...queue];
       this.currentIndex = this.queue.findIndex(t => t.id === track.id);
@@ -792,16 +851,47 @@ class AudioPlayer {
       StorageManager.recordPlaybackEvent(this.currentTrack, 'skip', { playedSeconds });
     }
 
+    // ── Move to next item in the current queue ───────────────────────────
     if (this.hasNext()) {
       this.currentIndex++;
       this.loadAndPlayCurrent();
-      this.checkAndReplenishRecommendations();
-    } else if (this.repeatMode === 'all') {
+      // Only replenish recommendations in Discovery mode
+      if (!this.isDeterministicPlayback()) {
+        this.checkAndReplenishRecommendations();
+      }
+      return;
+    }
+
+    // ── End of queue ─────────────────────────────────────────────────────
+
+    // DETERMINISTIC MODE (Favorites / User-Created Playlist)
+    // Recommendations must NEVER be injected here.
+    if (this.isDeterministicPlayback()) {
+      if (this.repeatMode === 'all') {
+        this.currentIndex = 0;
+        this.loadAndPlayCurrent();
+      } else if (this.isShuffle) {
+        const shuffled = this.shuffleArray([...this.originalQueue]);
+        this.queue = shuffled;
+        this.originalQueue = [...shuffled];
+        this.currentIndex = 0;
+        this.notify('queueUpdate', { queue: this.queue, index: this.currentIndex, seedTrack: this.seedTrack });
+        this.loadAndPlayCurrent();
+      } else {
+        // Clean stop
+        this.notify('playbackChange', false);
+      }
+      return;
+    }
+
+    // DISCOVERY MODE
+    if (this.repeatMode === 'all') {
       this.currentIndex = 0;
       this.loadAndPlayCurrent();
-    } else if (this.isDeterministicPlayback()) {
-      this.notify('playbackChange', false);
-    } else if (this.isContinuousPlaybackAllowed() && this.recommendationQueue.length > 0) {
+      return;
+    }
+
+    if (this.smartMoodAutoplay && this.recommendationQueue.length > 0) {
       const nextTrack = this.recommendationQueue.shift();
       this.queue.push(nextTrack);
       this.currentIndex = this.queue.length - 1;
@@ -814,12 +904,16 @@ class AudioPlayer {
       });
       this.loadAndPlayCurrent();
       this.checkAndReplenishRecommendations();
-    } else if (this.isContinuousPlaybackAllowed() && this.suggestedTracks.length > 0) {
-      this.playNextSuggestedMoodTrack();
-    } else if (!autoTrigger && this.playbackContext.type !== 'browse') {
-      this.currentIndex = 0;
-      this.loadAndPlayCurrent();
+      return;
     }
+
+    if (this.smartMoodAutoplay && this.suggestedTracks.length > 0) {
+      this.playNextSuggestedMoodTrack();
+      return;
+    }
+
+    // No more tracks — stop
+    this.notify('playbackChange', false);
   }
 
   prev() {

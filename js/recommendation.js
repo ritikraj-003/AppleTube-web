@@ -1,46 +1,86 @@
 /**
- * Aura Music - Modular Recommendation Engine
- * Intelligently generates dynamic "Up Next" queues using YouTube Live candidates,
- * multi-factor scoring, user listening history, and diversity heuristics.
+ * Aura Music - Context-Aware Recommendation Engine v2
+ *
+ * Architecture principle:
+ *   PLAYBACK ENGINE  (player.js)      → determines WHICH song plays next
+ *   RECOMMENDATION ENGINE (this file) → generates CANDIDATE songs for Discovery mode ONLY
+ *
+ * This engine is NEVER consulted for:
+ *   - Favorite Songs playback  (playbackContext.type === 'favorites')
+ *   - User-Created Playlist playback (playbackContext.type === 'playlist')
+ *
+ * Language is a HARD GATE: cross-language recommendations are blocked unless:
+ *   (a) the user's listening history clearly shows multilingual preference, OR
+ *   (b) there are genuinely insufficient same-language candidates (< 5 after exhaustive search)
  */
 
 import { api } from './api.js';
 import { StorageManager } from './storage.js';
 
+// ─── Configurable Weights ────────────────────────────────────────────────────
 export const RECOMMENDATION_WEIGHTS = Object.freeze({
-  language: 0.25,
-  genre: 0.15,
-  mood: 0.15,
-  similarity: 0.15,
-  artist: 0.08,
-  energy: 0.07,
-  history: 0.07,
-  session: 0.05,
-  exploration: 0.03
+  language:    0.30,   // HARD primary gate — boosted from 0.25
+  genre:       0.15,
+  mood:        0.15,
+  similarity:  0.12,
+  artist:      0.08,
+  energy:      0.07,
+  history:     0.07,
+  session:     0.04,
+  exploration: 0.02
 });
 
-export const RECENT_SONG_WINDOW = 10;
+// Songs that were played recently are penalised to avoid repetition
+export const RECENT_SONG_WINDOW = 12;
 
+// Max proportion of recommendations allowed in a different (but related) language
+const CROSS_LANGUAGE_MAX_RATIO = 0.15; // 15% cross-language at most
+
+// How many times the same artist can appear in a single recommendation batch
+const MAX_ARTIST_OCCURRENCES = 3;
+const MAX_ARTIST_OCCURRENCES_FIRST_TEN = 2;
+
+// Peer-group artist clusters — used to score artist-tier similarity
+const ARTIST_PEER_GROUPS = [
+  // Hindi Bollywood male vocals
+  ['arijit singh', 'atif aslam', 'mohit chauhan', 'jubin nautiyal', 'armaan malik', 'darshan raval', 'javed ali', 'shaan', 'udit narayan', 'sonu nigam', 'kumar sanu', 'vishal mishra', 'b praak'],
+  // Hindi Bollywood female vocals
+  ['shreya ghoshal', 'neha kakkar', 'alka yagnik', 'tulsi kumar', 'asees kaur', 'jasleen royal', 'sunidhi chauhan', 'monali thakur', 'palak muchhal', 'kanika kapoor'],
+  // Punjabi artists
+  ['karan aujla', 'ap dhillon', 'diljit dosanjh', 'shubh', 'sidhu moose wala', 'guru randhawa', 'jass manak', 'ammy virk', 'harrdy sandhu', 'babbal rai', 'mankirt aulakh', 'jassi gill'],
+  // Bhojpuri artists
+  ['pawan singh', 'khesari lal yadav', 'ritesh pandey', 'dinesh lal yadav', 'ankush raja', 'samar singh', 'neelkamal singh', 'gunjan singh', 'awadhesh premi'],
+  // Tamil artists
+  ['anirudh ravichander', 'yuvan shankar raja', 'harris jayaraj', 'sid sriram', 'dhanush', 'karthik', 'vijay antony', 'ilayaraja', 'a.r. rahman'],
+  // Telugu artists
+  ['devi sri prasad', 'thaman', 's.s. thaman', 'anirudh telugu', 'sid sriram', 'rahul sipligunj', 'hemachandra'],
+  // English pop/indie
+  ['taylor swift', 'ed sheeran', 'adele', 'charlie puth', 'shawn mendes', 'dua lipa', 'the weeknd', 'billie eilish', 'olivia rodrigo', 'harry styles'],
+  // English hip-hop/r&b
+  ['drake', 'post malone', 'juice wrld', 'xxxtentacion', 'khalid', 'joji'],
+];
+
+// ─── Engine ──────────────────────────────────────────────────────────────────
 export class RecommendationEngine {
   constructor(customWeights = {}) {
-    // Configurable multi-factor recommendation scoring weights
     this.weights = { ...RECOMMENDATION_WEIGHTS, ...customWeights };
-
-    // Keep an in-memory cache of generated recommendation batches
-    this.recommendationCache = new Map();
+    // Cache: cacheKey → { timestamp, queue }
+    this._queueCache = new Map();
+    this._CACHE_TTL_MS = 3 * 60 * 1000; // 3-minute TTL
   }
 
-  /**
-   * Set or tune scoring weights at runtime
-   */
+  /** Override scoring weights at runtime */
   setWeights(newWeights) {
     this.weights = { ...this.weights, ...newWeights };
+    this._queueCache.clear();
   }
 
+  // ─── Public API ─────────────────────────────────────────────────────────────
+
   /**
-   * Main recommendation entry point:
-   * Takes a seed track and returns a diversified, ranked list of recommended tracks.
-   * Completely independent of search result lists.
+   * Primary entry point.
+   * Returns a diversified, language-safe, ranked list of recommended tracks.
+   * Must ONLY be called when playbackContext.type is 'browse' / discovery.
    */
   async generateQueue(seedTrack, options = {}) {
     if (!seedTrack) return [];
@@ -48,453 +88,453 @@ export class RecommendationEngine {
     const limit = options.limit || 20;
     const currentQueueIds = new Set(options.existingQueueIds || []);
     const seedId = String(seedTrack.id || seedTrack.videoId || '');
+
+    // Check result cache
+    const cacheKey = `${seedId}__${limit}`;
+    const cached = this._queueCache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp) < this._CACHE_TTL_MS) {
+      const freshFromCache = cached.queue.filter(
+        t => !currentQueueIds.has(t.id) && !currentQueueIds.has(t.videoId)
+      );
+      if (freshFromCache.length >= 5) return freshFromCache;
+    }
+
     const seedVibe = seedTrack.vibeMetadata || api.extractVibe(seedTrack);
 
     try {
-      // 1. Fetch genuine candidates from YouTube InnerTube watch-next API
-      const primaryResult = await api.getRelatedTracks(seedTrack, null, 25);
-      let candidates = Array.isArray(primaryResult?.tracks) ? [...primaryResult.tracks] : [];
+      // ── Step 1: Fetch raw candidates from YouTube watch-next ──────────────
+      let candidates = [];
+      try {
+        const primaryResult = await api.getRelatedTracks(seedTrack, null, 30);
+        candidates = Array.isArray(primaryResult?.tracks) ? [...primaryResult.tracks] : [];
+      } catch (e) {
+        console.warn('[RecommendationEngine] Primary related-tracks fetch failed', e);
+      }
 
-      // 2. If candidates are sparse (< 12), perform targeted discovery search
-      const primaryArtist = StorageManager.parseArtists(seedTrack.artist)[0] || seedTrack.artist;
+      // ── Step 2: Augment with targeted discovery if sparse ────────────────
+      const primaryArtist = StorageManager.parseArtists(seedTrack.artist)[0] || seedTrack.artist || '';
       if (candidates.length < 12) {
+        const discoveryQueries = this._buildDiscoveryQueries(seedTrack, seedVibe, primaryArtist);
         try {
-          const discoveryQueries = [
-            primaryArtist && primaryArtist !== 'YouTube Artist'
-              ? `${primaryArtist} ${seedVibe.mood} ${seedVibe.language} similar songs`
-              : '',
-            `${seedTrack.title || ''} radio ${seedVibe.genreTags.join(' ')}`
-          ].filter(Boolean);
-          const batches = await Promise.all(discoveryQueries.map(query => api.searchSongs(query, 10)));
+          const batches = await Promise.all(discoveryQueries.map(q => api.searchSongs(q, 12)));
           for (const batch of batches) {
             if (Array.isArray(batch)) candidates.push(...batch);
           }
         } catch (e) {
-          console.warn('[RecommendationEngine] Artist discovery query failed', e);
+          console.warn('[RecommendationEngine] Discovery queries failed', e);
         }
       }
 
-      // Discovery results are filtered again because they bypass getRelatedTracks().
-      candidates = api.filterRelatedTracks(seedTrack, candidates, Math.max(limit, 20));
+      // ── Step 3: Language gate + deduplication ─────────────────────────────
+      const { sameLangCandidates, crossLangCandidates } = this._partitionByLanguage(
+        candidates, seedTrack, seedVibe, seedId, currentQueueIds
+      );
 
-      // Deduplicate candidates by videoId or id
-      const uniqueCandidates = [];
-      const seen = new Set();
-      if (seedId) seen.add(seedId);
-      if (seedTrack.videoId) seen.add(seedTrack.videoId);
+      // Build working pool: predominantly same-language
+      let workingPool = [...sameLangCandidates];
 
-      for (const track of candidates) {
-        const vid = track.videoId || (track.id?.startsWith('yt_') ? track.id.replace('yt_', '') : track.id);
-        if (!vid || seen.has(vid) || seen.has(track.id) || currentQueueIds.has(track.id) || currentQueueIds.has(vid)) {
-          continue;
+      // Only fill cross-language if same-language pool is genuinely short
+      if (workingPool.length < 8) {
+        const userPrefs = StorageManager.getUserPreferences();
+        const isMultilingual = this._isMultilingualUser(userPrefs, seedVibe.language);
+        if (isMultilingual && crossLangCandidates.length > 0) {
+          const allowedCross = Math.max(0, Math.floor(limit * CROSS_LANGUAGE_MAX_RATIO));
+          workingPool.push(...crossLangCandidates.slice(0, allowedCross));
         }
-        if (api.extractVibe(track).language !== seedVibe.language) {
-          continue;
-        }
-        // Duration sanity check: only normal songs (40s to 600s)
-        const dur = Number(track.duration) || 180;
-        if (dur < 40 || dur > 600) {
-          continue;
-        }
-        seen.add(vid);
-        if (track.id) seen.add(track.id);
-        uniqueCandidates.push(track);
       }
 
-      // 3. User listening history, recent window, and current session context
+      // ── Step 4: Score each candidate ─────────────────────────────────────
       const userPrefs = StorageManager.getUserPreferences();
-      const recentPlayed = new Set((userPrefs.recentTrackIds || []).slice(0, options.recentSongWindow || RECENT_SONG_WINDOW));
+      const recentPlayedSet = new Set(
+        (userPrefs.recentTrackIds || []).slice(0, options.recentSongWindow || RECENT_SONG_WINDOW)
+      );
       const sessionContext = options.sessionContext || userPrefs.sessionTrackIds || [];
 
-      // 4. Score each candidate
-      const scoredCandidates = uniqueCandidates.map((candidate, index) => {
-        const scoreBreakdown = this.scoreCandidate(candidate, seedTrack, userPrefs, index, uniqueCandidates.length, {
-          recentPlayed,
-          sessionContext
-        });
-        return {
-          track: candidate,
-          score: scoreBreakdown.total,
-          breakdown: scoreBreakdown
-        };
+      const scored = workingPool.map((candidate, index) => {
+        const breakdown = this._scoreCandidate(
+          candidate, seedTrack, userPrefs, index, workingPool.length,
+          { recentPlayed: recentPlayedSet, sessionContext }
+        );
+        return { track: candidate, score: breakdown.total, breakdown };
       });
 
-      // Sort by final composite score descending
-      scoredCandidates.sort((a, b) => b.score - a.score);
+      // Sort by final score descending
+      scored.sort((a, b) => b.score - a.score);
 
-      // 5. Apply diversity while preserving the ranked score order.
-      const freshCandidates = scoredCandidates.filter(item => {
+      // ── Step 5: Prefer fresh over recently-played ─────────────────────────
+      const freshScored = scored.filter(item => {
         const key = item.track.videoId || item.track.id;
-        return !recentPlayed.has(key);
+        return !recentPlayedSet.has(key);
       });
-      const rankedPool = freshCandidates.length >= Math.min(limit, 10)
-        ? freshCandidates
-        : [...freshCandidates, ...scoredCandidates.filter(item => !freshCandidates.includes(item))];
-      const diversifiedList = [];
-      const artistCounts = {};
+      const recentScored = scored.filter(item => {
+        const key = item.track.videoId || item.track.id;
+        return recentPlayedSet.has(key);
+      });
+      const rankedPool = freshScored.length >= Math.min(limit, 10)
+        ? freshScored
+        : [...freshScored, ...recentScored];
 
-      for (const item of rankedPool) {
-        const t = item.track;
+      // ── Step 6: Diversify by artist ───────────────────────────────────────
+      const diversified = this._applyArtistDiversity(rankedPool, limit);
 
-        const primaryArt = (StorageManager.parseArtists(t.artist)[0] || t.artist || 'Unknown').toLowerCase();
-        const currentArtCount = artistCounts[primaryArt] || 0;
+      // Cache result
+      if (this._queueCache.size > 50) this._queueCache.clear();
+      this._queueCache.set(cacheKey, { timestamp: Date.now(), queue: diversified });
 
-        // Cap to max 2 per artist in first 10, max 3 overall
-        if (diversifiedList.length < 10 && currentArtCount >= 2) {
-          continue;
-        }
-        if (currentArtCount >= 3) {
-          continue;
-        }
-
-        artistCounts[primaryArt] = currentArtCount + 1;
-        diversifiedList.push(t);
-
-        if (diversifiedList.length >= limit) {
-          break;
-        }
-      }
-
-      // If diversity filter was too aggressive and we have fewer than 10 tracks, fill with remaining scored tracks
-      if (diversifiedList.length < 10) {
-        for (const item of rankedPool) {
-          if (!diversifiedList.some(d => d.id === item.track.id || (d.videoId && d.videoId === item.track.videoId))) {
-            diversifiedList.push(item.track);
-            if (diversifiedList.length >= limit) break;
-          }
-        }
-      }
-
-      return diversifiedList;
+      return diversified;
     } catch (err) {
-      console.error('[RecommendationEngine] Failed to generate recommendation queue', err);
+      console.error('[RecommendationEngine] generateQueue failed', err);
       return [];
     }
   }
 
   /**
-   * Fetches more recommendations when the active queue runs low
+   * Replenishment call when the active queue runs low.
    */
   async fetchMoreRecommendations(currentTrack, existingQueue = [], limit = 10) {
     const existingQueueIds = existingQueue.map(t => t.id || t.videoId).filter(Boolean);
     return this.generateQueue(currentTrack, { limit, existingQueueIds });
   }
 
-  /**
-   * Weighted context score. All components are normalized to 0..1 before
-   * penalties are applied, so language continuity remains the strongest gate.
-   */
-  scoreCandidate(candidate, seedTrack, userPrefs, rankIndex, totalCandidates, context = {}) {
-    const seedVibe = seedTrack.vibeMetadata || api.extractVibe(seedTrack);
-    const candidateVibe = candidate.vibeMetadata || api.extractVibe(candidate);
-    const language = this.computeLanguageSimilarity(candidate, seedTrack, userPrefs);
-    const genre = this.computeGenreSimilarity(candidate, seedTrack);
-    const mood = seedVibe.mood === candidateVibe.mood ? 1 : genre * 0.65;
-    const songSimilarity = this.computeSongSimilarity(candidate, seedTrack);
-    const albumSimilarity = this.computeAlbumSimilarity(candidate, seedTrack);
-    const eraSimilarity = this.computeEraSimilarity(candidateVibe, seedVibe);
-    const similarity = (songSimilarity + albumSimilarity + eraSimilarity) / 3;
-    const artist = this.computeArtistTier(candidate, seedTrack);
-    const energy = this.computeEnergySimilarity(candidateVibe, seedVibe);
-    const history = this.computeUserPreferenceScore(candidate, userPrefs);
-    const session = this.computeSessionScore(candidate, seedTrack, context.sessionContext);
-    const exploration = this.computeExplorationScore(candidate, seedTrack, rankIndex);
-    const recentPenalty = context.recentPlayed?.has(candidate.id) || context.recentPlayed?.has(candidate.videoId) ? 0.22 : 0;
-    const skipPenalty = this.computeSkipPenalty(candidate, userPrefs);
-    const weightTotal = Object.values(this.weights).reduce((sum, value) => sum + value, 0);
-    const weightedScore =
-      (language * this.weights.language) + (genre * this.weights.genre) + (mood * this.weights.mood) +
-      (similarity * this.weights.similarity) + (artist * this.weights.artist) +
-      (energy * this.weights.energy) + (history * this.weights.history) +
-      (session * this.weights.session) + (exploration * this.weights.exploration);
-    const total = (weightedScore / weightTotal) - recentPenalty - skipPenalty;
+  // ─── Internal Helpers ────────────────────────────────────────────────────────
 
-    return {
-      total: Math.max(0, Math.min(1, total)),
-      language,
-      genre,
-      mood,
-      similarity,
-      songSimilarity,
-      albumSimilarity,
-      eraSimilarity,
-      artist,
-      energy,
-      history,
-      session,
-      exploration,
-      recentPenalty,
-      skipPenalty,
-      vibe: candidateVibe,
-    };
+  _buildDiscoveryQueries(seedTrack, seedVibe, primaryArtist) {
+    const langQuery = seedVibe.language === 'bhojpuri' ? 'bhojpuri'
+      : seedVibe.language === 'punjabi'  ? 'punjabi'
+      : seedVibe.language === 'tamil'    ? 'tamil'
+      : seedVibe.language === 'telugu'   ? 'telugu'
+      : seedVibe.language === 'bengali'  ? 'bengali'
+      : seedVibe.language === 'hindi'    ? 'hindi bollywood'
+      : '';
+
+    const queries = [];
+    if (primaryArtist && primaryArtist !== 'YouTube Artist') {
+      queries.push(`${primaryArtist} ${seedVibe.mood} songs`);
+    }
+    if (langQuery) {
+      queries.push(`${langQuery} ${seedVibe.mood} songs top hits`);
+    }
+    if (seedVibe.genreTags && seedVibe.genreTags.length > 0) {
+      queries.push(`${seedVibe.genreTags.slice(0, 2).join(' ')} ${seedVibe.mood} songs`);
+    }
+    return queries.filter(Boolean);
   }
 
-  /**
-   * 1. Artist Similarity: 0.0 - 1.0
-   * Exact match = 1.0, shared featured artist = 0.8, related affinity = 0.7, different = 0.2
-   */
-  computeArtistSimilarity(candidate, seedTrack) {
-    const seedArtists = StorageManager.parseArtists(seedTrack.artist).map(a => a.toLowerCase());
-    const candArtists = StorageManager.parseArtists(candidate.artist).map(a => a.toLowerCase());
+  _partitionByLanguage(candidates, seedTrack, seedVibe, seedId, currentQueueIds) {
+    const sameLangCandidates = [];
+    const crossLangCandidates = [];
+    const seen = new Set([seedId]);
+    if (seedTrack.videoId) seen.add(seedTrack.videoId);
 
-    if (!seedArtists.length || !candArtists.length) return 0.3;
+    for (const candidate of candidates) {
+      const vid = candidate.videoId ||
+        (candidate.id && candidate.id.startsWith('yt_') ? candidate.id.replace('yt_', '') : candidate.id);
 
-    // Check exact primary artist match
-    if (seedArtists[0] && candArtists[0] && seedArtists[0] === candArtists[0]) {
-      return 1.0;
+      if (!vid || seen.has(vid) || seen.has(candidate.id) ||
+          currentQueueIds.has(candidate.id) || currentQueueIds.has(vid)) {
+        continue;
+      }
+
+      // Duration sanity check: 40s – 12min
+      const dur = Number(candidate.duration) || 180;
+      if (dur < 40 || dur > 720) continue;
+
+      seen.add(vid);
+      if (candidate.id) seen.add(candidate.id);
+
+      const candidateVibe = candidate.vibeMetadata || api.extractVibe(candidate);
+      candidate.vibeMetadata = candidateVibe; // cache on object for reuse
+
+      if (candidateVibe.language === seedVibe.language) {
+        sameLangCandidates.push(candidate);
+      } else {
+        crossLangCandidates.push(candidate);
+      }
     }
 
-    // Check intersection of any featured artists
-    const hasIntersection = seedArtists.some(sa => candArtists.includes(sa));
-    if (hasIntersection) {
-      return 0.8;
+    return { sameLangCandidates, crossLangCandidates };
+  }
+
+  _isMultilingualUser(userPrefs, seedLanguage) {
+    const otherLangs = Object.entries(userPrefs.languages || {})
+      .filter(([lang, stat]) => {
+        return lang !== seedLanguage &&
+          ((stat.playCount || 0) + (stat.completions || 0)) >= 5;
+      });
+    return otherLangs.length >= 1;
+  }
+
+  _applyArtistDiversity(rankedPool, limit) {
+    const result = [];
+    const artistCounts = {};
+
+    for (const item of rankedPool) {
+      const primaryArtist = (
+        StorageManager.parseArtists(item.track.artist)[0] || item.track.artist || 'Unknown'
+      ).toLowerCase();
+      const count = artistCounts[primaryArtist] || 0;
+
+      if (result.length < 10 && count >= MAX_ARTIST_OCCURRENCES_FIRST_TEN) continue;
+      if (count >= MAX_ARTIST_OCCURRENCES) continue;
+
+      artistCounts[primaryArtist] = count + 1;
+      result.push(item.track);
+      if (result.length >= limit) break;
     }
 
-    // Check partial string matching (e.g., "Arijit" in "Arijit Singh")
-    for (const sa of seedArtists) {
-      for (const ca of candArtists) {
-        if (sa.includes(ca) || ca.includes(sa)) {
-          return 0.7;
+    // Safety fill if diversity was too aggressive
+    if (result.length < Math.min(limit, 8)) {
+      for (const item of rankedPool) {
+        const already = result.some(
+          d => d.id === item.track.id || (d.videoId && d.videoId === item.track.videoId)
+        );
+        if (!already) {
+          result.push(item.track);
+          if (result.length >= limit) break;
         }
       }
     }
 
-    return 0.2;
+    return result;
   }
 
-  computeArtistTier(candidate, seedTrack) {
-    const seedArtists = StorageManager.parseArtists(seedTrack.artist).map(artist => artist.toLowerCase());
-    const candidateArtists = StorageManager.parseArtists(candidate.artist).map(artist => artist.toLowerCase());
-    if (seedArtists.some(seed => candidateArtists.some(candidateName => candidateName === seed || candidateName.includes(seed) || seed.includes(candidateName)))) {
-      return 1;
-    }
+  // ─── Multi-Factor Scoring ────────────────────────────────────────────────────
 
-    const peerGroups = [
-      ['arijit singh', 'atif aslam', 'mohit chauhan', 'jubin nautiyal', 'jasleen royal', 'shreya ghoshal'],
-      ['karan aujla', 'ap dhillon', 'diljit dosanjh', 'shubh', 'sidhu moose wala', 'guru randhawa']
-    ];
-    const samePeerGroup = peerGroups.some(group =>
-      seedArtists.some(seed => group.some(peer => seed.includes(peer) || peer.includes(seed))) &&
-      candidateArtists.some(candidateName => group.some(peer => candidateName.includes(peer) || peer.includes(candidateName)))
-    );
-    return samePeerGroup ? 0.78 : 0.18;
-  }
-
-  computeEnergySimilarity(candidateVibe, seedVibe) {
-    const distance = Math.abs((candidateVibe.energy ?? 0.5) - (seedVibe.energy ?? 0.5));
-    const tempoMatch = candidateVibe.tempo === seedVibe.tempo ? 0.2 : 0;
-    return Math.max(0, Math.min(1, 1 - distance + tempoMatch));
-  }
-
-  computeSessionScore(candidate, seedTrack, sessionTrackIds = []) {
-    if (!Array.isArray(sessionTrackIds) || sessionTrackIds.length === 0) return 0.5;
-    const seedLanguage = api.extractVibe(seedTrack).language;
-    const candidateLanguage = api.extractVibe(candidate).language;
-    const sessionLanguages = sessionTrackIds
-      .map(item => typeof item === 'object' ? api.extractVibe(item).language : null)
-      .filter(Boolean);
-    const sessionMoods = sessionTrackIds
-      .map(item => typeof item === 'object' ? api.extractVibe(item).mood : null)
-      .filter(Boolean);
-    if (sessionLanguages.length === 0) return candidateLanguage === seedLanguage ? 0.65 : 0;
-    const sessionLanguageMatch = sessionLanguages.filter(language => language === candidateLanguage).length / sessionLanguages.length;
-    const sessionMoodMatch = sessionMoods.filter(mood => mood === api.extractVibe(candidate).mood).length / sessionMoods.length;
-    return candidateLanguage === seedLanguage ? (0.65 + (sessionLanguageMatch * 0.2) + (sessionMoodMatch * 0.15)) : 0;
-  }
-
-  computeExplorationScore(candidate, seedTrack, rankIndex) {
-    const candidateVibe = api.extractVibe(candidate);
-    const seedVibe = api.extractVibe(seedTrack);
-    if (candidateVibe.language !== seedVibe.language) return 0;
-    return rankIndex < 5 && candidateVibe.mood === seedVibe.mood ? 0.2 : 0.05;
-  }
-
-  computeSkipPenalty(candidate, userPrefs) {
-    const trackStats = userPrefs?.tracks?.[candidate.id] || userPrefs?.tracks?.[candidate.videoId];
-    const artistStats = StorageManager.parseArtists(candidate.artist)
-      .map(artist => userPrefs?.artists?.[artist.toLowerCase()])
-      .filter(Boolean);
-    const trackSkips = trackStats?.skips || 0;
-    const artistSkips = artistStats.reduce((sum, stat) => sum + (stat.skips || 0), 0);
-    return Math.min(0.25, (trackSkips * 0.04) + (artistSkips * 0.015));
-  }
-
-  /**
-   * 2. Genre / Mood Similarity: 0.0 - 1.0
-   */
-  computeGenreSimilarity(candidate, seedTrack) {
+  _scoreCandidate(candidate, seedTrack, userPrefs, rankIndex, totalCandidates, context = {}) {
     const seedVibe = seedTrack.vibeMetadata || api.extractVibe(seedTrack);
-    const candidateVibe = candidate.vibeMetadata || api.extractVibe(candidate);
-    const seedMood = seedVibe.mood;
-    const candMood = candidateVibe.mood;
+    const candVibe = candidate.vibeMetadata  || api.extractVibe(candidate);
 
-    const sharedGenres = seedVibe.genreTags.filter(tag => candidateVibe.genreTags.includes(tag)).length;
-    if (sharedGenres > 0 && seedMood === candMood) return 1;
-    if (sharedGenres > 0) return 0.8;
+    const language    = this._computeLanguageScore(candVibe, seedVibe, userPrefs);
+    const genre       = this._computeGenreScore(candVibe, seedVibe);
+    const mood        = candVibe.mood === seedVibe.mood ? 1.0 : genre * 0.65;
+    const song        = this._computeSongSimilarity(candidate, seedTrack);
+    const album       = this._computeAlbumSimilarity(candidate, seedTrack);
+    const era         = this._computeEraSimilarity(candVibe, seedVibe);
+    const similarity  = (song + album + era) / 3;
+    const artist      = this._computeArtistTier(candidate, seedTrack);
+    const energy      = this._computeEnergyScore(candVibe, seedVibe);
+    const history     = this._computeHistoryScore(candidate, userPrefs);
+    const session     = this._computeSessionScore(candidate, seedTrack, context.sessionContext, candVibe, seedVibe);
+    const exploration = this._computeExplorationScore(candVibe, seedVibe, rankIndex);
 
-    if (seedMood === candMood) {
-      return 1.0;
-    }
+    const recentPenalty = (
+      context.recentPlayed?.has(candidate.id) || context.recentPlayed?.has(candidate.videoId)
+    ) ? 0.20 : 0;
+    const skipPenalty = this._computeSkipPenalty(candidate, userPrefs);
 
-    // Complementary moods
-    const complementary = {
-      romantic: ['chill', 'sad'],
-      chill: ['romantic', 'happy'],
-      happy: ['energetic', 'chill'],
-      energetic: ['happy'],
-      sad: ['romantic', 'chill']
+    const W = this.weights;
+    const weightSum = W.language + W.genre + W.mood + W.similarity + W.artist +
+                      W.energy + W.history + W.session + W.exploration;
+    const weightedSum =
+      (language    * W.language)    +
+      (genre       * W.genre)       +
+      (mood        * W.mood)        +
+      (similarity  * W.similarity)  +
+      (artist      * W.artist)      +
+      (energy      * W.energy)      +
+      (history     * W.history)     +
+      (session     * W.session)     +
+      (exploration * W.exploration);
+
+    const total = Math.max(0, Math.min(1, (weightedSum / weightSum) - recentPenalty - skipPenalty));
+
+    return {
+      total, language, genre, mood, similarity, song, album, era,
+      artist, energy, history, session, exploration, recentPenalty, skipPenalty, vibe: candVibe
     };
-
-    if (complementary[seedMood]?.includes(candMood)) {
-      return 0.65;
-    }
-
-    // Opposites (e.g. sad vs energetic)
-    const opposites = {
-      sad: ['energetic', 'happy'],
-      happy: ['sad'],
-      chill: ['energetic'],
-      energetic: ['sad', 'chill']
-    };
-
-    if (opposites[seedMood]?.includes(candMood)) {
-      return 0.1;
-    }
-
-    return 0.4;
   }
 
   /**
-   * 3. Language Similarity: 0.0 - 1.0
-   * Detects Hindi/Bollywood, Punjabi, English, South Indian based on scripts and keywords
+   * Language Score: 0 | 0.35 | 1.0
+   *
+   * 1.0  → same language (always)
+   * 0.35 → different language, user has proven multilingual taste (>=5 events in both)
+   * 0.0  → different language, insufficient cross-language history
    */
-  computeLanguageSimilarity(candidate, seedTrack, userPrefs = {}) {
-    const seedLang = this.detectLanguage(seedTrack.title, seedTrack.artist);
-    const candLang = this.detectLanguage(candidate.title, candidate.artist);
+  _computeLanguageScore(candVibe, seedVibe, userPrefs) {
+    if (candVibe.language === seedVibe.language) return 1.0;
 
-    if (seedLang === candLang) {
-      return 1.0;
-    }
+    const seedLangStat = userPrefs.languages?.[seedVibe.language];
+    const candLangStat = userPrefs.languages?.[candVibe.language];
+    const seedPlays = (seedLangStat?.playCount || 0) + (seedLangStat?.completions || 0);
+    const candPlays = (candLangStat?.playCount || 0) + (candLangStat?.completions || 0);
 
-    const multilingual = Object.entries(userPrefs.languages || {})
-      .filter(([, stat]) => (stat.playCount || 0) + (stat.completions || 0) >= 3)
-      .map(([language]) => language);
-    if (multilingual.includes(candLang) && multilingual.includes(seedLang)) {
-      return 0.35;
+    if (seedPlays >= 5 && candPlays >= 5) {
+      // Reduce further based on user's skip rate in the candidate language
+      const candSkips = candLangStat?.skips || 0;
+      const skipRatio = candPlays > 0 ? candSkips / candPlays : 0;
+      return Math.max(0, 0.35 - (skipRatio * 0.25));
     }
 
     return 0;
   }
 
-  detectLanguage(title = '', artist = '') {
-    return api.detectLanguage(title, artist);
+  _computeGenreScore(candVibe, seedVibe) {
+    const sharedGenres = (seedVibe.genreTags || []).filter(
+      tag => (candVibe.genreTags || []).includes(tag)
+    ).length;
+
+    if (sharedGenres > 0 && seedVibe.mood === candVibe.mood) return 1.0;
+    if (sharedGenres > 0) return 0.80;
+    if (seedVibe.mood === candVibe.mood) return 0.90;
+
+    const complementary = {
+      romantic:  ['chill', 'sad'],
+      chill:     ['romantic', 'happy'],
+      happy:     ['energetic', 'chill'],
+      energetic: ['happy'],
+      sad:       ['romantic', 'chill']
+    };
+    if (complementary[seedVibe.mood]?.includes(candVibe.mood)) return 0.60;
+
+    const opposites = {
+      sad:       ['energetic', 'happy'],
+      happy:     ['sad'],
+      chill:     ['energetic'],
+      energetic: ['sad', 'chill']
+    };
+    if (opposites[seedVibe.mood]?.includes(candVibe.mood)) return 0.10;
+
+    return 0.35;
   }
 
-  /**
-   * 4. Song / Title Lexical & Context Similarity: 0.0 - 1.0
-   */
-  computeSongSimilarity(candidate, seedTrack) {
-    const cleanSeed = (seedTrack.title || '').toLowerCase()
-      .replace(/[^a-z0-9\s]/gi, ' ')
+  _computeArtistTier(candidate, seedTrack) {
+    const seedArtists = StorageManager.parseArtists(seedTrack.artist).map(a => a.toLowerCase());
+    const candArtists = StorageManager.parseArtists(candidate.artist).map(a => a.toLowerCase());
+
+    const directMatch = seedArtists.some(sa =>
+      candArtists.some(ca => ca === sa || ca.includes(sa) || sa.includes(ca))
+    );
+    if (directMatch) return 1.0;
+
+    for (const group of ARTIST_PEER_GROUPS) {
+      const seedIn = seedArtists.some(sa => group.some(peer => sa.includes(peer) || peer.includes(sa)));
+      const candIn = candArtists.some(ca => group.some(peer => ca.includes(peer) || peer.includes(ca)));
+      if (seedIn && candIn) return 0.75;
+    }
+
+    return 0.18;
+  }
+
+  _computeEnergyScore(candVibe, seedVibe) {
+    const distance  = Math.abs((candVibe.energy ?? 0.5) - (seedVibe.energy ?? 0.5));
+    const tempoBonus = (candVibe.tempo === seedVibe.tempo) ? 0.15 : 0;
+    return Math.max(0, Math.min(1, 1 - distance + tempoBonus));
+  }
+
+  _computeSessionScore(candidate, seedTrack, sessionTrackIds, candVibe, seedVibe) {
+    if (!Array.isArray(sessionTrackIds) || sessionTrackIds.length === 0) {
+      return candVibe.language === seedVibe.language ? 0.55 : 0;
+    }
+    // Hard 0 for cross-language candidates
+    if (candVibe.language !== seedVibe.language) return 0;
+
+    const sessionVibes = sessionTrackIds
+      .map(item => (typeof item === 'object' ? (item.vibeMetadata || api.extractVibe(item)) : null))
+      .filter(Boolean);
+
+    if (sessionVibes.length === 0) return 0.55;
+
+    const langMatch = sessionVibes.filter(v => v.language === candVibe.language).length / sessionVibes.length;
+    const moodMatch = sessionVibes.filter(v => v.mood === candVibe.mood).length / sessionVibes.length;
+
+    return 0.55 + (langMatch * 0.20) + (moodMatch * 0.10);
+  }
+
+  _computeExplorationScore(candVibe, seedVibe, rankIndex) {
+    if (candVibe.language !== seedVibe.language) return 0;
+    return rankIndex < 5 && candVibe.mood === seedVibe.mood ? 0.20 : 0.05;
+  }
+
+  _computeSongSimilarity(candidate, seedTrack) {
+    const stopwords = /^(song|video|audio|lyrics|version|remix|official|full|original|ft|feat|and|the|a|in|on|of)$/i;
+    const clean = str => (str || '').toLowerCase()
+      .replace(/[^a-z0-9\s\u0900-\u097F\u0A00-\u0A7F]/gi, ' ')
       .split(/\s+/)
-      .filter(w => w.length > 2 && !/^(song|video|audio|lyrics|version|remix|official|full|original)$/i.test(w));
+      .filter(w => w.length > 2 && !stopwords.test(w));
 
-    const cleanCand = (candidate.title || '').toLowerCase()
-      .replace(/[^a-z0-9\s]/gi, ' ')
-      .split(/\s+/)
-      .filter(w => w.length > 2 && !/^(song|video|audio|lyrics|version|remix|official|full|original)$/i.test(w));
+    const seedWords = clean(seedTrack.title);
+    const candWords = clean(candidate.title);
+    if (!seedWords.length || !candWords.length) return 0.5;
 
-    if (!cleanSeed.length || !cleanCand.length) return 0.5;
-
-    // Count overlapping significant keywords
-    const matches = cleanCand.filter(w => cleanSeed.includes(w));
+    const matches = candWords.filter(w => seedWords.includes(w));
     if (matches.length >= 2) return 0.9;
     if (matches.length === 1) return 0.7;
 
-    // Check duration similarity (e.g. tracks within 40 seconds of each other have similar structure)
     const seedDur = seedTrack.duration || 180;
-    const candDur = candidate.duration || 180;
-    const durRatio = Math.min(seedDur, candDur) / Math.max(seedDur, candDur);
-
-    return 0.3 + (durRatio * 0.2);
+    const candDur = candidate.duration  || 180;
+    return 0.3 + (Math.min(seedDur, candDur) / Math.max(seedDur, candDur)) * 0.2;
   }
 
-  computeAlbumSimilarity(candidate, seedTrack) {
-    const seedAlbum = String(seedTrack.album || '').toLowerCase().trim();
-    const candidateAlbum = String(candidate.album || '').toLowerCase().trim();
-    if (!seedAlbum || !candidateAlbum || seedAlbum === 'youtube music' || candidateAlbum === 'youtube music') return 0.5;
-    if (seedAlbum === candidateAlbum) return 1;
-    if (seedAlbum.includes(candidateAlbum) || candidateAlbum.includes(seedAlbum)) return 0.8;
+  _computeAlbumSimilarity(candidate, seedTrack) {
+    const s = String(seedTrack.album || '').toLowerCase().trim();
+    const c = String(candidate.album  || '').toLowerCase().trim();
+    if (!s || !c || s === 'youtube music' || c === 'youtube music') return 0.5;
+    if (s === c) return 1.0;
+    if (s.includes(c) || c.includes(s)) return 0.8;
     return 0.2;
   }
 
-  computeEraSimilarity(candidateVibe, seedVibe) {
-    if (!candidateVibe.year || !seedVibe.year) return 0.5;
-    return Math.max(0, 1 - (Math.abs(candidateVibe.year - seedVibe.year) / 20));
+  _computeEraSimilarity(candVibe, seedVibe) {
+    if (!candVibe.year || !seedVibe.year) return 0.5;
+    return Math.max(0, 1 - Math.abs(candVibe.year - seedVibe.year) / 20);
   }
 
-  /**
-   * 5. User Listening History & Affinity: 0.0 - 1.0
-   */
-  computeUserPreferenceScore(candidate, userPrefs) {
-    if (!userPrefs || !userPrefs.artists) return 0.5; // Cold start baseline
+  _computeHistoryScore(candidate, userPrefs) {
+    if (!userPrefs || !userPrefs.artists) return 0.5;
 
     const candArtists = StorageManager.parseArtists(candidate.artist);
-    let totalScore = 0;
-    let counted = 0;
+    const candVibe = candidate.vibeMetadata || api.extractVibe(candidate);
+    let total = 0, count = 0;
 
     for (const art of candArtists) {
-      const key = art.toLowerCase();
-      const aStat = userPrefs.artists[key];
-      if (aStat) {
-        totalScore += aStat.score || 0;
-        counted++;
-      }
+      const stat = userPrefs.artists[art.toLowerCase()];
+      if (stat) { total += stat.score || 0; count++; }
     }
 
-    // Genre affinity
-    const genre = candidate.mood || 'chill';
-    const gStat = userPrefs.genres?.[genre.toLowerCase()];
-    if (gStat) {
-      totalScore += (gStat.score || 0) * 0.5;
-      counted += 0.5;
-    }
+    const moodStr  = (candVibe.mood || 'chill').toLowerCase();
+    const genreStr = (candidate.genre || candVibe.genreTags?.[0] || moodStr).toLowerCase();
+    const langStr  = candVibe.language;
 
-    const candidateVibe = candidate.vibeMetadata || api.extractVibe(candidate);
-    const languageStat = userPrefs.languages?.[candidateVibe.language];
-    const moodStat = userPrefs.moods?.[candidateVibe.mood];
-    [languageStat, moodStat].forEach(stat => {
-      if (stat) {
-        totalScore += (stat.score || 0) * 0.5;
-        counted += 0.5;
-      }
+    [
+      userPrefs.genres?.[genreStr],
+      userPrefs.languages?.[langStr],
+      userPrefs.moods?.[moodStr]
+    ].forEach(stat => {
+      if (stat) { total += (stat.score || 0) * 0.5; count += 0.5; }
     });
 
     const trackStat = userPrefs.tracks?.[candidate.id] || userPrefs.tracks?.[candidate.videoId];
     if (trackStat) {
-      totalScore += ((trackStat.replays || 0) * 1.5) + ((trackStat.completions || 0) * 0.75);
-      counted += 1;
+      total += ((trackStat.replays || 0) * 1.5) + ((trackStat.completions || 0) * 0.75);
+      count += 1;
     }
 
-    if (counted === 0) {
-      return 0.5; // Neutral for unknown artists
-    }
-
-    const avgScore = totalScore / counted;
-    // Map score (-10 to +10 range) to 0.0 - 1.0 range
-    const normalized = 0.5 + (Math.tanh(avgScore / 5) * 0.5);
-    return Math.max(0.1, Math.min(1.0, normalized));
+    if (count === 0) return 0.5;
+    return Math.max(0.1, Math.min(1.0, 0.5 + Math.tanh(total / count / 5) * 0.5));
   }
 
-  /**
-   * 6. Popularity & Relevance from Discovery Source: 0.0 - 1.0
-   */
-  computePopularityRelevance(rankIndex, total) {
-    if (!total || total <= 1) return 0.8;
-    // High rank in YouTube watch-next results gets 1.0 tapering down to 0.5
-    return 1.0 - ((rankIndex / total) * 0.5);
+  _computeSkipPenalty(candidate, userPrefs) {
+    const trackStat  = userPrefs?.tracks?.[candidate.id] || userPrefs?.tracks?.[candidate.videoId];
+    const artistStats = StorageManager.parseArtists(candidate.artist)
+      .map(a => userPrefs?.artists?.[a.toLowerCase()])
+      .filter(Boolean);
+    const candVibe   = candidate.vibeMetadata || api.extractVibe(candidate);
+    const langStat   = userPrefs?.languages?.[candVibe.language];
+
+    const trackSkips  = trackStat?.skips || 0;
+    const artistSkips = artistStats.reduce((sum, s) => sum + (s.skips || 0), 0);
+    const langSkips   = langStat?.skips || 0;
+    const langPlays   = Math.max(1, (langStat?.playCount || 0) + (langStat?.completions || 0));
+    const langSkipRatio = langSkips / langPlays;
+
+    return Math.min(0.25,
+      (trackSkips  * 0.04)  +
+      (artistSkips * 0.012) +
+      (langSkipRatio * 0.08)
+    );
   }
 }
 
-// Export singleton instance
+// ─── Singleton Export ────────────────────────────────────────────────────────
 export const recommendationEngine = new RecommendationEngine();
