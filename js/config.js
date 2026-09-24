@@ -8,8 +8,9 @@ export const CONFIG = {
 
   // Google OAuth 2.0 Web Client ID
   // Configure in Google Cloud Console (https://console.cloud.google.com/apis/credentials)
-  // Ensure Authorized JavaScript origins includes: http://localhost:3000
-  GOOGLE_CLIENT_ID: '',
+  // Authorized JavaScript origins: http://localhost:3000 and any fallback port
+  // printed by start.sh (for example http://localhost:3001).
+  GOOGLE_CLIENT_ID: '478691904536-p5mjbadl4bcjusu6ou4jg0e99q4kcfse.apps.googleusercontent.com',
 
   // High-availability public Invidious API instances for YouTube Database Search & Streaming
   YOUTUBE_INVIDIOUS_MIRRORS: [

@@ -42,6 +42,7 @@ class App {
     this.initVisualizer();
     this.initSleepMode();
     this.bindEvents();
+    this.bindSwipeNavigation();
     this.bindPlayerEvents();
     this.bindKeyboardShortcuts();
     this.initDragAndDrop();
@@ -2250,6 +2251,127 @@ class App {
         this.updateLikeButton(StorageManager.isLiked(player.currentTrack.id));
       }
     }
+  }
+
+  bindSwipeNavigation() {
+    const surface = this.dom.contentArea;
+    if (!surface || !window.PointerEvent) return;
+
+    const swipeViews = ['home', 'radio', 'search', 'sleep', 'travel', 'library', 'liked', 'recent'];
+    const ignoredTargets = 'button, a, input, textarea, select, [role="slider"], .slider-bar, .search-suggestions-dropdown, .queue-drawer, .modal-backdrop';
+    let gesture = null;
+    let frameId = 0;
+    let transitionTimer = 0;
+
+    const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const adjacentView = (direction) => {
+      const index = swipeViews.indexOf(this.currentView);
+      const nextIndex = index + (direction < 0 ? 1 : -1);
+      return swipeViews[nextIndex] || null;
+    };
+    const isAtScrollEdge = (direction) => {
+      if (direction < 0) {
+        return surface.scrollTop + surface.clientHeight >= surface.scrollHeight - 4;
+      }
+      return surface.scrollTop <= 4;
+    };
+    const setTransform = (offset, opacity = 1) => {
+      surface.style.transform = `translate3d(0, ${offset}px, 0)`;
+      surface.style.opacity = String(opacity);
+    };
+    const scheduleTransform = (offset, opacity) => {
+      cancelAnimationFrame(frameId);
+      frameId = requestAnimationFrame(() => setTransform(offset, opacity));
+    };
+    const clearTransition = () => {
+      clearTimeout(transitionTimer);
+      cancelAnimationFrame(frameId);
+      surface.classList.remove('swipe-active');
+      surface.style.transition = '';
+      surface.style.transform = '';
+      surface.style.opacity = '';
+      gesture = null;
+    };
+
+    const finishGesture = (event, cancelled = false) => {
+      if (!gesture || gesture.pointerId !== event.pointerId) return;
+      const current = gesture;
+      gesture = null;
+      surface.releasePointerCapture?.(event.pointerId);
+
+      const elapsed = Math.max(1, performance.now() - current.startedAt);
+      const distance = current.offset;
+      const velocity = Math.abs(distance) / elapsed;
+      const direction = distance < 0 ? -1 : 1;
+      const targetView = adjacentView(direction);
+      const threshold = Math.max(56, Math.min(window.innerHeight * 0.22, 180));
+      const committed = !cancelled && targetView && isAtScrollEdge(direction) &&
+        (Math.abs(distance) > threshold || (Math.abs(distance) > 38 && velocity > 0.7));
+      const targetOffset = committed ? direction * window.innerHeight : 0;
+      const duration = prefersReducedMotion() ? 120 : committed ? 230 : 190;
+
+      surface.style.transition = `transform ${duration}ms cubic-bezier(0.22, 1, 0.36, 1), opacity ${duration}ms ease-out`;
+      scheduleTransform(targetOffset, committed ? 0.82 : 1);
+
+      transitionTimer = window.setTimeout(async () => {
+        if (!committed) {
+          clearTransition();
+          return;
+        }
+
+        await this.navigate(targetView);
+        surface.style.transition = 'none';
+        setTransform(-targetOffset, 0.82);
+        requestAnimationFrame(() => {
+          surface.style.transition = `transform ${prefersReducedMotion() ? 120 : 230}ms cubic-bezier(0.22, 1, 0.36, 1), opacity ${prefersReducedMotion() ? 120 : 230}ms ease-out`;
+          scheduleTransform(0, 1);
+          transitionTimer = window.setTimeout(clearTransition, prefersReducedMotion() ? 130 : 240);
+        });
+      }, duration + 16);
+    };
+
+    surface.addEventListener('pointerdown', (event) => {
+      if (event.pointerType === 'mouse' || event.isPrimary === false || event.target.closest(ignoredTargets)) return;
+      if (this.dom.fullscreenOverlay?.classList.contains('open')) return;
+      gesture = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        offset: 0,
+        startedAt: performance.now(),
+        tracking: false
+      };
+      surface.setPointerCapture?.(event.pointerId);
+    }, { passive: true });
+
+    surface.addEventListener('pointermove', (event) => {
+      if (!gesture || gesture.pointerId !== event.pointerId) return;
+      const dx = event.clientX - gesture.startX;
+      const dy = event.clientY - gesture.startY;
+      if (!gesture.tracking) {
+        if (Math.abs(dy) < 8 || Math.abs(dy) < Math.abs(dx) * 1.15) {
+          if (Math.abs(dx) > 12) gesture = null;
+          return;
+        }
+        const direction = dy < 0 ? -1 : 1;
+        if (!adjacentView(direction) || !isAtScrollEdge(direction)) {
+          gesture = null;
+          return;
+        }
+        gesture.tracking = true;
+        surface.classList.add('swipe-active');
+        event.preventDefault();
+      }
+      if (!gesture.tracking) return;
+      event.preventDefault();
+      const resistance = Math.abs(dy) > window.innerHeight ? 0.82 : 1;
+      gesture.offset = dy * resistance;
+      const opacity = 1 - Math.min(0.18, Math.abs(gesture.offset) / window.innerHeight * 0.18);
+      scheduleTransform(gesture.offset, opacity);
+    }, { passive: false });
+
+    surface.addEventListener('pointerup', finishGesture, { passive: true });
+    surface.addEventListener('pointercancel', (event) => finishGesture(event, true), { passive: true });
   }
 
   // --- Views Navigation ---

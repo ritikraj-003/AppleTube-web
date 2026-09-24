@@ -600,6 +600,13 @@
   max-width: 1400px;
   width: 100%;
   margin: 0 auto;
+  touch-action: pan-y;
+  will-change: transform, opacity;
+}
+
+.content-area.swipe-active {
+  overscroll-behavior: contain;
+  user-select: none;
 }
 
 .content-area > * {

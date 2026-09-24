@@ -2,6 +2,7 @@
 # AppleTube - Quick Launch & Live YouTube Server Script
 
 PORT="${PORT:-3000}"
+export GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-478691904536-p5mjbadl4bcjusu6ou4jg0e99q4kcfse.apps.googleusercontent.com}"
 FREE_PORT=$(python3 - "$PORT" <<'PY'
 import socket, sys
 start = int(sys.argv[1])
