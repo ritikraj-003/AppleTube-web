@@ -12,6 +12,7 @@ import { renderQRCodeSvg } from './qrcode.js';
 import { auth } from './auth.js';
 import { ColorExtractor } from './colorExtractor.js';
 import { sleepMode } from './sleepMode.js';
+import { SLEEP_FILTERS, getSleepTracks } from './sleepData.js';
 import { TRAVEL_CATEGORIES, OVERALL_TRAVEL_SONGS, CATEGORY_SONGS, getSuggestedTravelSongs } from './travelData.js';
 
 class App {
@@ -28,6 +29,7 @@ class App {
 
     // Sleep Mode & Traveling Vibes State
     this.selectedSleepMinutes = 15;
+    this.activeSleepFilter = 'all';
     this.activeTravelCategory = null; // null => Overall Traveling Songs
     this.isTravelSuggestActive = false;
 
@@ -3262,110 +3264,69 @@ class App {
   async renderSleepView() {
     const isRunning = sleepMode.isActive;
     const remainingText = isRunning ? sleepMode.getRemaining().formattedTime : '';
+    const activeFilter = SLEEP_FILTERS.find(filter => filter.id === this.activeSleepFilter) || SLEEP_FILTERS[0];
+    const fallbackTracks = getSleepTracks(activeFilter.id);
+    const requestId = (this.sleepRequestId || 0) + 1;
+    this.sleepRequestId = requestId;
 
     this.dom.contentArea.innerHTML = `
-      <!-- Hero Card -->
       <div class="sleep-hero-card">
         <div style="max-width: 540px; position: relative; z-index: 2;">
           <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
             <span style="font-size: 1.15rem;">🌙</span>
-            <span style="font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #c084fc;">Nighttime Serenity</span>
+            <span style="font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #c084fc;">Hindi Lo-Fi Nights</span>
           </div>
           <h1 style="font-size: 2.2rem; font-weight: 800; letter-spacing: -0.8px; margin-bottom: 8px; color: #ffffff;">Sleep & Relax</h1>
-          <p style="font-size: 1rem; color: rgba(255, 255, 255, 0.75); line-height: 1.5; margin-bottom: 22px;">Slow down, breathe, and let the music fade into the night.</p>
+          <p style="font-size: 1rem; color: rgba(255, 255, 255, 0.75); line-height: 1.5; margin-bottom: 22px;">Bollywood love, sad acoustic, and slowed Hindi songs for the quiet hours.</p>
           <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center;">
-            <button type="button" class="btn-primary" id="btnStartSleepSession" style="background: linear-gradient(135deg, #a855f7 0%, #7e22ce 100%); border: none; padding: 12px 24px; font-size: 0.95rem; font-weight: 700; box-shadow: 0 4px 18px rgba(168, 85, 247, 0.4);">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px;">
-                <circle cx="12" cy="12" r="10"></circle>
-                <polyline points="12 6 12 12 16 14"></polyline>
-              </svg>
-              Start Sleep Session
-            </button>
-            <span class="sleep-pill-badge" style="padding: 6px 14px; font-size: 0.85rem; display: ${isRunning ? 'inline-flex' : 'none'};" id="sleepHeroBadge">
-              🌙 ${remainingText} remaining
-            </span>
+            <button type="button" class="btn-primary" id="btnStartSleepSession" style="background: linear-gradient(135deg, #a855f7 0%, #7e22ce 100%); border: none; padding: 12px 24px; font-size: 0.95rem; font-weight: 700; box-shadow: 0 4px 18px rgba(168, 85, 247, 0.4);">Start Sleep Session</button>
+            <span class="sleep-pill-badge" style="padding: 6px 14px; font-size: 0.85rem; display: ${isRunning ? 'inline-flex' : 'none'};" id="sleepHeroBadge">🌙 ${remainingText} remaining</span>
           </div>
         </div>
       </div>
 
-      <!-- Made for Sleep -->
-      <div style="margin-bottom: 34px;">
+      <div class="sleep-catalog-section">
         <div class="section-header">
           <div>
-            <h2 class="section-title">Made for Sleep</h2>
-            <div class="section-subtitle">Gentle tones and peaceful compositions to calm your mind</div>
+            <h2 class="section-title">Bollywood Lo-Fi & Midnight Love</h2>
+            <div class="section-subtitle">Trending Hindi love, sad, acoustic, and slowed + reverb interpretations.</div>
           </div>
         </div>
-        <div class="cards-grid" id="sleepMadeGrid"></div>
-      </div>
-
-      <!-- Deep Relaxation -->
-      <div style="margin-bottom: 34px;">
-        <div class="section-header">
-          <div>
-            <h2 class="section-title">Deep Relaxation</h2>
-            <div class="section-subtitle">Binaural, nature acoustic, and meditation soundscapes</div>
-          </div>
+        <div class="sleep-filter-pills" role="tablist" aria-label="Sleep and Relax filters">
+          ${SLEEP_FILTERS.map(filter => `
+            <button type="button" class="sleep-filter-pill ${filter.id === activeFilter.id ? 'active' : ''}" data-sleep-filter="${filter.id}" role="tab" aria-selected="${filter.id === activeFilter.id}">${filter.label}</button>
+          `).join('')}
         </div>
-        <div class="cards-grid" id="sleepDeepGrid"></div>
-      </div>
-
-      <!-- Calm Instrumentals -->
-      <div style="margin-bottom: 34px;">
-        <div class="section-header">
-          <div>
-            <h2 class="section-title">Calm Instrumentals</h2>
-            <div class="section-subtitle">Fingerpicked acoustics and quiet piano harmonies</div>
-          </div>
-        </div>
-        <div class="cards-grid" id="sleepInstrumentalGrid"></div>
-      </div>
-
-      <!-- Lo-Fi Nights -->
-      <div style="margin-bottom: 34px;">
-        <div class="section-header">
-          <div>
-            <h2 class="section-title">Lo-Fi Nights</h2>
-            <div class="section-subtitle">Mellow beats and quiet midnight chords</div>
-          </div>
-        </div>
-        <div class="cards-grid" id="sleepLofiGrid"></div>
+        <div class="cards-grid" id="sleepCatalogGrid"></div>
       </div>
     `;
 
-    document.getElementById('btnStartSleepSession')?.addEventListener('click', () => {
-      this.openSleepModal();
+    document.getElementById('btnStartSleepSession')?.addEventListener('click', () => this.openSleepModal());
+    document.querySelectorAll('[data-sleep-filter]').forEach(button => {
+      button.addEventListener('click', () => {
+        this.activeSleepFilter = button.dataset.sleepFilter;
+        this.renderSleepView();
+      });
     });
 
-    // Populate calming collections from existing library
-    const madeForSleep = [
-      CONFIG.CURATED_TRACKS[1], // Coffee Beans & Raindrops
-      CONFIG.CURATED_TRACKS[0], // Midnight City Lights
-      CONFIG.CURATED_RADIO[0]   // Lofi Girl 24/7 Stream
-    ].filter(Boolean);
+    const grid = document.getElementById('sleepCatalogGrid');
+    this.renderGridItems(grid, fallbackTracks);
 
-    const deepRelaxation = [
-      CONFIG.CURATED_TRACKS[4], // Deep Focus & Flow
-      CONFIG.CURATED_TRACKS[3], // Acoustic Morning Breeze
-      CONFIG.CURATED_RADIO[1]   // Chillout Lounge FM
-    ].filter(Boolean);
-
-    const calmInstrumentals = [
-      CONFIG.CURATED_TRACKS[3], // Acoustic Morning Breeze
-      CONFIG.CURATED_TRACKS[1], // Coffee Beans & Raindrops
-      CONFIG.CURATED_TRACKS[4]  // Deep Focus & Flow
-    ].filter(Boolean);
-
-    const lofiNights = [
-      CONFIG.CURATED_TRACKS[0], // Midnight City Lights
-      CONFIG.CURATED_TRACKS[1], // Coffee Beans & Raindrops
-      CONFIG.CURATED_TRACKS[4]  // Deep Focus & Flow
-    ].filter(Boolean);
-
-    this.renderGridItems(document.getElementById('sleepMadeGrid'), madeForSleep);
-    this.renderGridItems(document.getElementById('sleepDeepGrid'), deepRelaxation);
-    this.renderGridItems(document.getElementById('sleepInstrumentalGrid'), calmInstrumentals);
-    this.renderGridItems(document.getElementById('sleepLofiGrid'), lofiNights);
+    try {
+      const remoteTracks = await api.searchSongs(activeFilter.query, 25);
+      if (requestId !== this.sleepRequestId || this.activeSleepFilter !== activeFilter.id) return;
+      const filteredRemote = remoteTracks.filter(track => api.isHindiPunjabiTrack(track));
+      const seen = new Set();
+      const tracks = [...filteredRemote, ...fallbackTracks].filter(track => {
+        const id = track.videoId || track.id;
+        if (!track || !id || seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      }).slice(0, 25);
+      this.renderGridItems(grid, tracks);
+    } catch (error) {
+      console.warn('[Sleep & Relax] Lo-fi search failed; keeping curated catalog.', error);
+    }
   }
 
   // --- Traveling Vibes Dedicated View (Strictly Zero Emojis) ---

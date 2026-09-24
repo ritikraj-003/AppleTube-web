@@ -3103,6 +3103,55 @@ body:has(.fullscreen-overlay.open) .toast-container,
   pointer-events: none;
 }
 
+.sleep-catalog-section {
+  margin-bottom: 34px;
+}
+
+.sleep-filter-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 20px;
+}
+
+.sleep-filter-pill {
+  min-height: 36px;
+  padding: 8px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full, 999px);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.sleep-filter-pill:hover,
+.sleep-filter-pill.active {
+  background: rgba(168, 85, 247, 0.18);
+  border-color: rgba(192, 132, 252, 0.55);
+  color: #f3e8ff;
+}
+
+@media (max-width: 600px) {
+  .sleep-filter-pills {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .sleep-filter-pills::-webkit-scrollbar {
+    display: none;
+  }
+
+  .sleep-filter-pill {
+    flex: 0 0 auto;
+  }
+}
+
 /* ==========================================================================
    AppleTube - Traveling Vibes View & Category Navigation
    ========================================================================== */
