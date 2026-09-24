@@ -16,6 +16,7 @@ import socket
 import threading
 import urllib.request
 import urllib.parse
+import urllib.error
 from http.server import SimpleHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 
 try:
@@ -52,7 +53,7 @@ AUDIO_URL_CACHE = {}
 ACTIVE_SESSIONS = {}
 
 # Google OAuth Configuration (Google Cloud Console OAuth 2.0 Client ID)
-GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID', '').strip()
+GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID', '').strip() or '478691904536-p5mjbadl4bcjusu6ou4jg0e99q4kcfse.apps.googleusercontent.com'
 
 # High-speed LRU Caches for Searches, Suggestions, and Trending
 SEARCH_CACHE_LOCK = threading.Lock()
@@ -143,19 +144,26 @@ def verify_google_token(credential=None, access_token=None):
             with urllib.request.urlopen(req, timeout=6) as resp:
                 if resp.status == 200:
                     data = json.loads(resp.read().decode('utf-8'))
-                    if data.get('sub') and data.get('email'):
-                        aud = data.get('aud')
-                        if GOOGLE_CLIENT_ID and aud != GOOGLE_CLIENT_ID:
-                            print(f"[AUTH ERROR] Google token audience mismatch: {aud} vs {GOOGLE_CLIENT_ID}", flush=True)
-                            return None
-                        email_verified = data.get('email_verified')
-                        if email_verified in (True, 'true', 'True', 1, '1'):
-                            user_info = {
-                                "sub": str(data.get('sub')),
-                                "email": str(data.get('email')).lower().strip(),
-                                "name": str(data.get('name') or data.get('email').split('@')[0]).strip(),
-                                "picture": str(data.get('picture') or '').strip()
-                            }
+                    aud = data.get('aud')
+                    if aud != GOOGLE_CLIENT_ID:
+                        print(f"[AUTH ERROR] Google token audience mismatch: received={aud!r}, expected={GOOGLE_CLIENT_ID!r}", flush=True)
+                        return None
+                    if not data.get('sub') or not data.get('email'):
+                        print(f"[AUTH ERROR] Google ID token missing required claims: sub={bool(data.get('sub'))}, email={bool(data.get('email'))}", flush=True)
+                        return None
+                    email_verified = data.get('email_verified')
+                    if email_verified not in (True, 'true', 'True', 1, '1'):
+                        print(f"[AUTH ERROR] Google ID token email is not verified: email_verified={email_verified!r}", flush=True)
+                        return None
+                    user_info = {
+                        "sub": str(data.get('sub')),
+                        "email": str(data.get('email')).lower().strip(),
+                        "name": str(data.get('name') or data.get('email').split('@')[0]).strip(),
+                        "picture": str(data.get('picture') or '').strip()
+                    }
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode('utf-8', errors='replace')
+            print(f"[AUTH ERROR] Google ID token verification failed: HTTP {e.code}: {error_body}", flush=True)
         except Exception as e:
             print(f"[AUTH ERROR] Google ID token verification failed: {e}", flush=True)
 
@@ -179,6 +187,9 @@ def verify_google_token(credential=None, access_token=None):
                             "name": str(data.get('name') or data.get('email').split('@')[0]).strip(),
                             "picture": str(data.get('picture') or '').strip()
                         }
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode('utf-8', errors='replace')
+            print(f"[AUTH ERROR] Google access token verification failed: HTTP {e.code}: {error_body}", flush=True)
         except Exception as e:
             print(f"[AUTH ERROR] Google access token verification failed: {e}", flush=True)
 
