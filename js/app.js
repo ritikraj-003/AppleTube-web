@@ -2284,6 +2284,7 @@ class App {
       this.fullscreenCloseTimer = setTimeout(() => {
         this.dom.fullscreenOverlay.classList.remove('open', 'closing');
         document.body.classList.remove('fullscreen-player-open');
+        document.documentElement.classList.remove('fullscreen-player-open');
       }, 300);
       return;
     }
@@ -2291,6 +2292,7 @@ class App {
     this.dom.fullscreenOverlay.classList.toggle('open', shouldOpen);
     this.dom.fullscreenOverlay.classList.remove('closing');
     document.body.classList.toggle('fullscreen-player-open', shouldOpen);
+    document.documentElement.classList.toggle('fullscreen-player-open', shouldOpen);
     if (shouldOpen) {
       if (this.visualizer) {
         this.visualizer.resize();
@@ -3499,4 +3501,5 @@ class App {
 // Bootstrap Aura Music on DOM Ready
 window.addEventListener('DOMContentLoaded', () => {
   window.AuraApp = new App();
+  window.UIManager = UIManager;
 });

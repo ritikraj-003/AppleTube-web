@@ -5,19 +5,25 @@
 .fullscreen-overlay {
   position: fixed;
   inset: 0;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  height: 100dvh;
+  box-sizing: border-box;
   background: #000000;
   z-index: 1000;
   display: none;
   flex-direction: column;
   justify-content: space-between;
   padding: 16px 28px calc(env(safe-area-inset-bottom, 0px) + 24px);
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
+  touch-action: none;
   transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1), opacity var(--transition-slow);
 }
 
 body.fullscreen-player-open {
-  overflow: hidden;
+  overflow: hidden !important;
+  touch-action: none;
 }
 
 .fullscreen-overlay.dragging {
@@ -44,12 +50,14 @@ body.fullscreen-player-open {
 /* Dynamic Ambient Glow Background */
 .fullscreen-bg {
   position: absolute;
-  inset: -15%;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
   background-size: cover;
   background-position: center;
   filter: blur(85px) brightness(0.35) saturate(1.8);
   opacity: 0.8;
-  transform: scale(1.15);
   pointer-events: none;
   z-index: 1;
   transition: background-image 1s ease-in-out;
@@ -61,11 +69,14 @@ body.fullscreen-player-open {
   display: flex;
   flex-direction: column;
   height: 100%;
-  min-height: 100%;
+  max-height: 100%;
+  min-height: 0;
   justify-content: space-between;
   max-width: 600px;
   width: 100%;
   margin: 0 auto;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 /* Fullscreen Top Bar */
@@ -134,16 +145,21 @@ body.fullscreen-player-open {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   position: relative;
   margin: 16px 0;
   width: 100%;
+  overflow: hidden;
 }
 
 .vinyl-disc-container {
   position: relative;
   width: min(340px, 38vh, 85vw);
   height: min(340px, 38vh, 85vw);
+  max-width: 100%;
+  max-height: 100%;
+  aspect-ratio: 1 / 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -645,25 +661,44 @@ body.fullscreen-player-open {
 }
 
 @media (max-width: 640px) {
-  .fullscreen-top {
-    padding: 8px 12px 0;
+  .fullscreen-overlay {
+    padding: 10px 16px calc(env(safe-area-inset-bottom, 0px) + 14px);
   }
 
-  .vinyl-disc-container {
-    width: min(290px, 38vh, 78vw);
-    height: min(290px, 38vh, 78vw);
+  .fullscreen-top {
+    padding: 6px 10px 0;
   }
 
   .fullscreen-center {
-    margin: 6px 0;
+    margin: 4px 0;
+    min-height: 0;
+    flex: 1 1 auto;
+  }
+
+  .vinyl-disc-container {
+    width: min(250px, 28vh, 68vw);
+    height: min(250px, 28vh, 68vw);
+    max-width: 100%;
+    max-height: 100%;
+    aspect-ratio: 1 / 1;
+  }
+
+  .fullscreen-bottom {
+    padding: 0 10px 4px;
+    flex-shrink: 0;
+  }
+
+  .fullscreen-track-info {
+    margin-bottom: 6px;
+    padding: 0 4px;
   }
 
   .fullscreen-title {
-    font-size: 1.35rem;
+    font-size: 1.3rem;
   }
 
   .fullscreen-artist {
-    font-size: 0.92rem;
+    font-size: 0.9rem;
   }
 
   .fullscreen-player-card {
@@ -671,12 +706,58 @@ body.fullscreen-player-open {
     padding: 0 2px;
   }
 
+  .fullscreen-speed-row {
+    margin-bottom: 6px;
+  }
+
   .fullscreen-controls {
     max-width: 100%;
+    margin: 2px 0 6px;
   }
 
   .fullscreen-play-btn {
-    width: 60px;
-    height: 60px;
+    width: 58px;
+    height: 58px;
+  }
+
+  .fullscreen-sub-controls {
+    margin: 2px 0 6px;
+  }
+
+  .fullscreen-up-next-cue {
+    margin-top: 2px;
+    padding: 2px 12px;
+  }
+}
+
+@media (max-height: 600px) and (max-width: 640px) {
+  .fullscreen-overlay {
+    padding: 6px 12px calc(env(safe-area-inset-bottom, 0px) + 8px);
+  }
+
+  .fullscreen-top {
+    padding: 2px 8px 0;
+  }
+
+  .fullscreen-center {
+    margin: 2px 0;
+  }
+
+  .vinyl-disc-container {
+    width: min(180px, 24vh, 55vw);
+    height: min(180px, 24vh, 55vw);
+  }
+
+  .fullscreen-title {
+    font-size: 1.15rem;
+  }
+
+  .fullscreen-artist {
+    font-size: 0.82rem;
+  }
+
+  .fullscreen-play-btn {
+    width: 52px;
+    height: 52px;
   }
 }

@@ -39,40 +39,125 @@ export class UIManager {
       .replace(/'/g, '&#039;');
   }
 
-  // --- Toast Notifications ---
-  static showToast(message, type = 'info') {
+  // --- Toast Notifications (Single Global Toast System) ---
+  static _activeToast = null;
+  static _toastTimeout = null;
+  static _toastRemoveTimeout = null;
+
+  static _getToastIcon(type, message) {
+    if (message.includes('Added to Favorites')) {
+      return `
+        <span class="toast-icon toast-heart active" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="#fa2d48" stroke="#fa2d48" stroke-width="1.5">
+            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+          </svg>
+        </span>
+      `;
+    }
+    if (message.includes('Removed from Favorites')) {
+      return `
+        <span class="toast-icon toast-heart inactive" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255, 255, 255, 0.75)" stroke-width="2">
+            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+          </svg>
+        </span>
+      `;
+    }
+    if (type === 'success') {
+      return `
+        <span class="toast-icon" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+          </svg>
+        </span>
+      `;
+    }
+    if (type === 'error') {
+      return `
+        <span class="toast-icon" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+        </span>
+      `;
+    }
+    if (type === 'warning') {
+      return `
+        <span class="toast-icon" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+        </span>
+      `;
+    }
+    return `
+      <span class="toast-icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="16" x2="12" y2="12"></line>
+          <line x1="12" y1="8" x2="12.01" y2="8"></line>
+        </svg>
+      </span>
+    `;
+  }
+
+  static showToast(message, type = 'info', duration = 2400) {
     const container = document.getElementById('toastContainer');
     if (!container) return;
 
-    const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
-
-    let icon = `
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="12" cy="12" r="10"></circle>
-        <line x1="12" y1="16" x2="12" y2="12"></line>
-        <line x1="12" y1="8" x2="12.01" y2="8"></line>
-      </svg>
-    `;
-
-    if (type === 'success') {
-      icon = `
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2">
-          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-          <polyline points="22 4 12 14.01 9 11.01"></polyline>
-        </svg>
-      `;
+    // 1. Cancel any pending dismiss / removal timers
+    if (this._toastTimeout) {
+      clearTimeout(this._toastTimeout);
+      this._toastTimeout = null;
+    }
+    if (this._toastRemoveTimeout) {
+      clearTimeout(this._toastRemoveTimeout);
+      this._toastRemoveTimeout = null;
     }
 
-    toast.innerHTML = `${icon}<span>${this.escapeHtml(message)}</span>`;
-    container.appendChild(toast);
+    const icon = this._getToastIcon(type, message);
+    const contentHtml = `${icon}<span>${this.escapeHtml(message)}</span>`;
 
-    setTimeout(() => {
+    // 2. Reuse existing mounted toast or create exactly one
+    let toast = this._activeToast;
+    if (!toast || !container.contains(toast)) {
+      container.innerHTML = '';
+      toast = document.createElement('div');
+      container.appendChild(toast);
+      this._activeToast = toast;
+    }
+
+    // 3. Update message, type, and reset transition states
+    toast.className = `toast ${type}`;
+    toast.innerHTML = contentHtml;
+    toast.style.opacity = '1';
+    toast.style.transform = 'translateY(0)';
+    toast.style.transition = 'none';
+
+    // 4. Trigger subtle pop animation
+    toast.classList.remove('toast-animate');
+    void toast.offsetWidth; // Force reflow
+    toast.classList.add('toast-animate');
+
+    // 5. Set dismiss timer (resets on rapid clicks)
+    this._toastTimeout = setTimeout(() => {
+      if (!this._activeToast || this._activeToast !== toast) return;
+      toast.style.transition = 'opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)';
       toast.style.opacity = '0';
-      toast.style.transform = 'translateY(10px)';
-      toast.style.transition = 'all 0.3s ease';
-      setTimeout(() => toast.remove(), 300);
-    }, 2800);
+      toast.style.transform = 'translateY(8px)';
+
+      this._toastRemoveTimeout = setTimeout(() => {
+        if (this._activeToast === toast) {
+          toast.remove();
+          this._activeToast = null;
+        }
+      }, 250);
+    }, duration);
   }
 
   // --- Song Cards Grid ---
