@@ -1624,6 +1624,7 @@
   width: min(360px, calc(100vw - 24px));
   max-width: 90vw;
   height: min(68vh, 560px);
+  max-height: 80vh;
   background: rgba(24, 24, 28, 0.58);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 24px 24px 18px 18px;
@@ -1633,6 +1634,7 @@
   padding: 20px 16px 16px;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   gap: 16px;
   z-index: 2600;
   transform: translate(-50%, calc(100% + 26px));
@@ -1663,6 +1665,7 @@
 .queue-header {
   display: flex;
   align-items: center;
+  flex-shrink: 0;
   justify-content: space-between;
 }
 
@@ -1854,6 +1857,10 @@
 .queue-suggestions-section {
   border-top: 1px solid var(--border-subtle);
   padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex-shrink: 0;
 }
 
 .suggestions-header {
@@ -1884,6 +1891,8 @@
 .suggestions-list {
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
   gap: 6px;
   max-height: min(350px, 45vh);
   overflow-y: auto;
@@ -2657,8 +2666,8 @@ body:has(.fullscreen-overlay.open) .toast-container,
     bottom: 0;
     width: 100%;
     max-width: none;
-    height: 100dvh;
-    max-height: none;
+    height: min(100dvh, 80vh);
+    max-height: 80vh;
     border-radius: 24px 24px 0 0;
     padding: max(20px, env(safe-area-inset-top, 0px)) 16px calc(16px + env(safe-area-inset-bottom, 0px));
     transform: translateY(100%);

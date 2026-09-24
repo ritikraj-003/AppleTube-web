@@ -1190,9 +1190,20 @@ class App {
       let swipeCurrentY = 0;
       let swipeTracking = false;
       let swipeDirection = null;
+      let swipeSource = null;
 
       this.dom.fullscreenOverlay.addEventListener('touchstart', (event) => {
-        if (event.touches.length !== 1 || event.target.closest('button, input, .fullscreen-progress-row, .queue-drawer')) {
+        if (event.touches.length !== 1 || event.target.closest('button, input, .fullscreen-progress-row')) {
+          swipeTracking = false;
+          return;
+        }
+        const list = event.target.closest('.queue-list, .suggestions-list');
+        const playerSurface = event.target.closest('.fullscreen-top, .apple-sheet-handle, .fullscreen-center, .fullscreen-vinyl, .vinyl-disc');
+        if (list && list.scrollTop > 0) {
+          swipeTracking = false;
+          return;
+        }
+        if (!playerSurface && !list) {
           swipeTracking = false;
           return;
         }
@@ -1200,6 +1211,7 @@ class App {
         swipeStartX = event.touches[0].clientX;
         swipeCurrentY = swipeStartY;
         swipeDirection = null;
+        swipeSource = list ? 'list' : 'player';
         swipeTracking = true;
       }, { passive: true });
 
@@ -1213,7 +1225,7 @@ class App {
         if (!swipeDirection && Math.max(Math.abs(deltaY), Math.abs(deltaX)) > 8) {
           swipeDirection = Math.abs(deltaY) > Math.abs(deltaX) ? 'vertical' : 'horizontal';
         }
-        if (swipeDirection === 'vertical' && deltaY > 0) {
+        if (swipeDirection === 'vertical' && deltaY > 0 && (swipeSource === 'player' || event.target.closest('.queue-list, .suggestions-list')?.scrollTop === 0)) {
           event.preventDefault();
           this.dom.fullscreenOverlay.style.setProperty('--fullscreen-drag-offset', `${Math.min(deltaY, window.innerHeight)}px`);
           this.dom.fullscreenOverlay.classList.add('dragging');
@@ -1221,7 +1233,13 @@ class App {
       }, { passive: false });
 
       this.dom.fullscreenOverlay.addEventListener('touchend', (event) => {
-        if (!swipeTracking || event.changedTouches.length !== 1) return;
+        if (!swipeTracking || event.changedTouches.length !== 1) {
+          swipeTracking = false;
+          swipeSource = null;
+          this.dom.fullscreenOverlay.classList.remove('dragging');
+          this.dom.fullscreenOverlay.style.removeProperty('--fullscreen-drag-offset');
+          return;
+        }
         swipeTracking = false;
         const endTouch = event.changedTouches[0];
         const verticalDistance = swipeStartY - endTouch.clientY;
@@ -1229,15 +1247,17 @@ class App {
         const horizontalDistance = Math.abs(swipeStartX - endTouch.clientX);
         this.dom.fullscreenOverlay.classList.remove('dragging');
         this.dom.fullscreenOverlay.style.removeProperty('--fullscreen-drag-offset');
-        if (downwardDistance > 80 && downwardDistance > horizontalDistance * 1.2) {
+        if (swipeSource === 'player' && downwardDistance > 80 && downwardDistance > horizontalDistance * 1.2) {
           this.toggleFullscreen(false);
-        } else if (verticalDistance > 70 && verticalDistance > horizontalDistance * 1.2) {
+        } else if (swipeSource === 'player' && verticalDistance > 70 && verticalDistance > horizontalDistance * 1.2) {
           this.dom.queueDrawer.classList.add('open');
         }
+        swipeSource = null;
       }, { passive: true });
 
       this.dom.fullscreenOverlay.addEventListener('touchcancel', () => {
         swipeTracking = false;
+        swipeSource = null;
         this.dom.fullscreenOverlay.classList.remove('dragging');
         this.dom.fullscreenOverlay.style.removeProperty('--fullscreen-drag-offset');
       }, { passive: true });
