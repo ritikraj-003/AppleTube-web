@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#000000" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="description" content="AppleTube — Stream millions of songs from YouTube ad-free with Apple Music interface and background playback on Android." />
+  <title>AppleTube - Apple Music Streaming</title>
+  
+  <link rel="icon" type="image/svg+xml" href="assets/logo.svg" />
+  <link rel="manifest" href="manifest.json" />
+
+  <!-- YouTube Iframe API -->
+  <script src="https://www.youtube.com/iframe_api"></script>
+
+  <!-- Google Identity Services (GIS) for Official Google Sign-In -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+
+  <!-- Stylesheets -->
+  <link rel="stylesheet" href="css/main.css?v=19" />
+  <link rel="stylesheet" href="css/components.css?v=19" />
+  <link rel="stylesheet" href="css/visualizer.css?v=19" />
+</head>
+<body>
+
+  <div id="app">
+    <!-- ==================== SIDEBAR NAVIGATION (APPLE MUSIC STYLE) ==================== -->
+    <aside class="sidebar" id="sidebar">
+      <a href="#" class="brand">
+        <img src="assets/logo.svg" alt="AppleTube Logo" class="brand-logo" />
+        <span class="brand-title">AppleTube</span>
+      </a>
+
+      <!-- Primary Nav -->
+      <nav class="nav-group">
+        <div class="nav-title">Discover</div>
+        <a href="#" class="nav-link active" data-view="home">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>
+          </svg>
+          <span>Home</span>
+        </a>
+        <a href="#" class="nav-link" data-view="radio">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="2"></circle>
+            <path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"></path>
+          </svg>
+          <span>Live Radio</span>
+          <span class="badge">Live</span>
+        </a>
+        <a href="#" class="nav-link" data-view="search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <span>Search</span>
+        </a>
+      </nav>
+
+      <!-- Vibes & Moods Nav -->
+      <nav class="nav-group">
+        <div class="nav-title">Vibes & Moods</div>
+        <a href="#" class="nav-link" data-view="sleep" id="sidebarSleepLink">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+          <span>🌙 Sleep & Relax</span>
+        </a>
+        <a href="#" class="nav-link" data-view="travel" id="sidebarTravelLink">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="3 11 22 2 13 21 11 13 3 11"></polygon>
+          </svg>
+          <span>Traveling Vibes</span>
+        </a>
+      </nav>
+
+      <!-- Library Nav -->
+      <nav class="nav-group">
+        <div class="nav-title">My Collection</div>
+        <a href="#" class="nav-link" data-view="library">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+          </svg>
+          <span>Library</span>
+        </a>
+        <a href="#" class="nav-link" data-view="liked">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+          </svg>
+          <span id="sidebarLikedText">Favorites</span>
+        </a>
+        <a href="#" class="nav-link" data-view="recent" id="sidebarRecentLink">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+          <span>Recent</span>
+        </a>
+      </nav>
+
+      <!-- Custom Playlists -->
+      <nav class="nav-group">
+        <div class="nav-title">Playlists</div>
+        <button class="btn-create-playlist" id="btnOpenCreatePlaylist">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          <span>New Playlist</span>
+        </button>
+        <div class="custom-playlists-list" id="sidebarPlaylists"></div>
+      </nav>
+    </aside>
+
+    <!-- ==================== MAIN CONTENT WRAPPER ==================== -->
+    <main class="main-wrapper">
+      <!-- Header -->
+      <header class="header">
+        <button class="btn-icon mobile-menu-btn" id="mobileMenuBtn" aria-label="Toggle menu">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
+
+        <div class="search-container" id="searchContainer">
+          <div class="search-input-box">
+            <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input
+              type="text"
+              class="search-input"
+              id="searchInput"
+              placeholder="Search songs, artists, albums, or live radio..."
+              autocomplete="off"
+            />
+            <button class="search-clear" id="searchClear" title="Clear search" aria-label="Clear search">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+            <button class="search-submit-btn" id="btnSearchSubmit" title="Search" aria-label="Submit Search">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+            </button>
+          </div>
+          <!-- Real-Time Live Song & Query Suggestions Dropdown -->
+          <div class="search-suggestions-dropdown" id="searchSuggestionsDropdown" role="listbox" aria-label="Search suggestions"></div>
+        </div>
+
+        <div class="header-actions">
+          <!-- Install on Android (PWA WebAPK button) -->
+          <button class="btn-install-header" id="btnInstallApp" title="Install AppleTube on your phone">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+              <line x1="12" y1="18" x2="12.01" y2="18"></line>
+            </svg>
+            <span>Install App</span>
+          </button>
+
+          <!-- Connect Phone Button -->
+          <button class="btn-connect-phone" id="btnConnectMobile" title="Scan QR to open & install on Android phone">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="7" height="7"></rect>
+              <rect x="14" y="3" width="7" height="7"></rect>
+              <rect x="14" y="14" width="7" height="7"></rect>
+              <rect x="3" y="14" width="7" height="7"></rect>
+            </svg>
+            <span>Phone App</span>
+          </button>
+
+          <!-- User Account / Profile Button -->
+          <button class="user-profile-chip" id="userProfileBtn" title="Account / Sign In">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+              <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+            <span>Sign In</span>
+          </button>
+
+          <button class="btn-icon" id="btnHeaderUpload" title="Upload local audio files" onclick="document.getElementById('localFileInput').click()">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- Dynamic Scroll Area -->
+      <section class="content-area fade-in" id="contentArea"></section>
+    </main>
+
+    <!-- ==================== BOTTOM PERSISTENT PLAYER ==================== -->
+    <footer class="player-bar" id="playerBar">
+      <!-- Left: Track Details -->
+      <div class="player-left">
+        <div class="player-thumb-wrapper" id="trackThumbWrapper" role="button" tabindex="0" title="Open Fullscreen Music Player (F)">
+          <img src="assets/default-cover.svg" alt="Track Artwork" class="player-thumb" id="trackThumb" crossorigin="anonymous" />
+          <div class="poster-fullscreen-overlay">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+            </svg>
+          </div>
+        </div>
+        <div class="player-track-meta">
+          <div class="player-title" id="trackTitle">Select a track to play</div>
+          <div class="player-artist" id="trackArtist">AppleTube</div>
+        </div>
+        <div class="player-left-actions">
+          <button class="player-action-btn" id="btnLikeCurrent" title="Like song">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+            </svg>
+          </button>
+          <button class="player-action-btn" id="btnDownloadCurrent" title="Download song">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+          </button>
+          <button class="player-action-btn" id="btnShareCurrent" title="Share song">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="18" cy="5" r="3"></circle>
+              <circle cx="6" cy="12" r="3"></circle>
+              <circle cx="18" cy="19" r="3"></circle>
+              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+            </svg>
+          </button>
+          <button class="player-action-btn" id="btnAddToPlaylistCurrent" title="Add to Playlist / More Options">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <circle cx="12" cy="5" r="2"></circle>
+              <circle cx="12" cy="12" r="2"></circle>
+              <circle cx="12" cy="19" r="2"></circle>
+            </svg>
+          </button>
+          <button class="player-action-btn sleep-pill-badge" id="miniSleepPill" title="Sleep Mode active — click to manage" style="display: none;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+            </svg>
+            <span id="miniSleepRemaining">30:00</span>
+          </button>
+        </div>
+        <div class="mini-eq" id="miniEq">
+          <div class="mini-eq-bar"></div>
+          <div class="mini-eq-bar"></div>
+          <div class="mini-eq-bar"></div>
+          <div class="mini-eq-bar"></div>
+        </div>
+      </div>
+
+      <!-- Center: Controls & Scrubber -->
+      <div class="player-center">
+        <div class="player-controls-row">
+          <button class="ctrl-btn" id="btnShuffle" title="Shuffle">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="16 3 21 3 21 8"></polyline>
+              <line x1="4" y1="20" x2="21" y2="3"></line>
+              <polyline points="21 16 21 21 16 21"></polyline>
+              <line x1="15" y1="15" x2="21" y2="21"></line>
+              <line x1="4" y1="4" x2="9" y2="9"></line>
+            </svg>
+          </button>
+          <button class="ctrl-btn" id="btnPrev" title="Previous">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="19 20 9 12 19 4 19 20"></polygon>
+              <line x1="5" y1="19" x2="5" y2="5" stroke="currentColor" stroke-width="2"></line>
+            </svg>
+          </button>
+          <button class="ctrl-btn ctrl-btn-play" id="btnPlay" title="Play">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="6 3 20 12 6 21 6 3"></polygon>
+            </svg>
+          </button>
+          <button class="ctrl-btn" id="btnNext" title="Next">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="5 4 15 12 5 20 5 4"></polygon>
+              <line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" stroke-width="2"></line>
+            </svg>
+          </button>
+          <button class="ctrl-btn" id="btnRepeat" title="Repeat">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="17 1 21 5 17 9"></polyline>
+              <path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
+              <polyline points="7 23 3 19 7 15"></polyline>
+              <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
+            </svg>
+          </button>
+        </div>
+
+        <div class="progress-container">
+          <span class="time-label time-label-current" id="timeCurrent" title="Current playback time">00:00</span>
+          <div class="slider-bar" id="progressSlider" role="slider" tabindex="0" aria-label="Seek through current song" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="00:00 of 00:00">
+            <div class="slider-fill" id="progressFill"></div>
+            <div class="slider-thumb" id="progressThumb"></div>
+            <div class="slider-tooltip" id="progressTooltip">00:00</div>
+          </div>
+          <span class="time-label time-label-remaining" id="timeTotal" title="Click to toggle remaining time">00:00</span>
+        </div>
+      </div>
+
+      <!-- Right: Volume & Auxiliary Buttons -->
+      <div class="player-right">
+        <div class="volume-wrapper">
+          <button class="ctrl-btn" id="btnMute" title="Mute/Unmute">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+            </svg>
+          </button>
+          <div class="slider-bar volume-bar" id="volumeSlider">
+            <div class="slider-fill" id="volumeFill" style="width: 80%;"></div>
+            <div class="slider-thumb" id="volumeThumb" style="left: 80%;"></div>
+          </div>
+        </div>
+
+        <button class="ctrl-btn" id="btnLyricsToggle" title="View Lyrics (L)">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="4" y1="9" x2="20" y2="9"></line>
+            <line x1="4" y1="15" x2="14" y2="15"></line>
+            <circle cx="18" cy="15" r="2"></circle>
+          </svg>
+        </button>
+        <button class="ctrl-btn" id="btnQueueToggle" title="Play Queue">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="8" y1="6" x2="21" y2="6"></line>
+            <line x1="8" y1="12" x2="21" y2="12"></line>
+            <line x1="8" y1="18" x2="21" y2="18"></line>
+            <line x1="3" y1="6" x2="3.01" y2="6"></line>
+            <line x1="3" y1="12" x2="3.01" y2="12"></line>
+            <line x1="3" y1="18" x2="3.01" y2="18"></line>
+          </svg>
+        </button>
+        <button class="ctrl-btn" id="btnFullscreenToggle" title="Open Fullscreen Player (F)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="15 3 21 3 21 9"></polyline>
+            <polyline points="9 21 3 21 3 15"></polyline>
+            <line x1="21" y1="3" x2="14" y2="10"></line>
+            <line x1="3" y1="21" x2="10" y2="14"></line>
+          </svg>
+        </button>
+      </div>
+    </footer>
+
+    <!-- ==================== APPLE MUSIC ANDROID BOTTOM NAVIGATION TAB BAR ==================== -->
+    <nav class="bottom-tab-bar" id="bottomTabBar">
+      <a class="tab-item active" id="tabListenNow" data-view="home">
+        <svg viewBox="0 0 24 24" fill="currentColor">
+          <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>
+        </svg>
+        <span>Home</span>
+      </a>
+      <a class="tab-item" id="tabRadio" data-view="radio">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="2"></circle>
+          <path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"></path>
+        </svg>
+        <span>Radio</span>
+      </a>
+      <a class="tab-item" id="tabSearch" data-view="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <span>Search</span>
+      </a>
+      <a class="tab-item" id="tabLibrary" data-view="library">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+          <path d="M9 7h6M9 11h6"></path>
+        </svg>
+        <span>Library</span>
+      </a>
+      <a class="tab-item" id="tabRecent" data-view="recent">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <polyline points="12 6 12 12 16 14"></polyline>
+        </svg>
+        <span>Recent</span>
+      </a>
+    </nav>
+
+    <!-- ==================== QUEUE DRAWER ==================== -->
+    <aside class="queue-drawer" id="queueDrawer">
+      <div class="queue-header">
+        <div>
+          <div class="queue-title">Play Queue</div>
+          <div style="font-size: 0.8rem; color: var(--text-secondary);" id="queueCount">0 tracks</div>
+          <div id="queueContextSubtitle" style="font-size: 0.78rem; color: var(--apple-pink); margin-top: 3px; font-weight: 500;"></div>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn-glass" style="padding: 6px 12px; font-size: 0.78rem;" id="btnClearQueue">Clear</button>
+          <button class="btn-icon" id="btnCloseQueue" style="width: 32px; height: 32px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Smart Mood Autoplay Bar (Sad to Sad, Happy to Happy) -->
+      <div class="smart-autoplay-bar">
+        <div class="smart-autoplay-label">
+          <span>✨ Smart Mood Autoplay</span>
+        </div>
+        <label class="toggle-switch" title="Auto-continue with songs of the same mood">
+          <input type="checkbox" id="queueSmartAutoplayToggle" checked />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <!-- Current Queue List -->
+      <div class="queue-list" id="queueList"></div>
+
+      <!-- Up Next Same-Mood Suggestions -->
+      <div class="queue-suggestions-section" id="queueSuggestionsContainer"></div>
+    </aside>
+
+    <!-- ==================== LYRICS OVERLAY ==================== -->
+    <div class="lyrics-overlay" id="lyricsOverlay">
+      <div class="lyrics-header">
+        <div>
+          <div style="font-size: 1.4rem; font-weight: 700;" id="lyricsTitle">Track Title</div>
+          <div style="font-size: 0.95rem; color: var(--text-secondary);" id="lyricsArtist">Artist Name</div>
+        </div>
+        <div class="lyrics-toolbar">
+          <button class="lyrics-tool-btn" id="btnLyricsModeToggle" title="Toggle between synced karaoke and full reading">📖 Full Reading</button>
+          <button class="lyrics-tool-btn" id="btnLyricsFontDec" title="Decrease font size">A-</button>
+          <button class="lyrics-tool-btn" id="btnLyricsFontInc" title="Increase font size">A+</button>
+          <button class="lyrics-tool-btn" id="btnLyricsCopy" title="Copy lyrics to clipboard">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+            <span>Copy</span>
+          </button>
+          <button class="btn-icon" id="btnCloseLyrics" title="Close lyrics">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="lyrics-container" id="lyricsContent"></div>
+    </div>
+
+    <!-- ==================== FULLSCREEN NOW PLAYING & VISUALIZER ==================== -->
+    <div class="fullscreen-overlay" id="fullscreenOverlay">
+      <div class="fullscreen-bg" id="fullscreenBg"></div>
+      <div class="fullscreen-content">
+        <div class="apple-sheet-handle" id="appleSheetHandle" style="display: none;" aria-hidden="true"></div>
+        <div class="fullscreen-top">
+          <button class="btn-icon fullscreen-nav-btn" id="btnCloseFullscreen" title="Close Fullscreen (Esc)" aria-label="Minimize player">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
+          <div class="fullscreen-app-info" id="fullscreenHeaderInfo" style="display: none;">
+            <img src="assets/logo.svg" width="24" height="24" alt="AppleTube" class="fullscreen-header-logo" />
+            <span class="fullscreen-header-title" id="fullscreenHeaderTitle"></span>
+          </div>
+          <div class="fullscreen-header-right">
+            <button class="btn-icon fullscreen-nav-btn" id="btnFullscreenLyrics" title="View Synced Lyrics" aria-label="Lyrics">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                <line x1="8" y1="9" x2="13" y2="9"></line>
+                <line x1="8" y1="13" x2="11" y2="13"></line>
+                <path d="M16 13a2 2 0 1 0 2-2v-4l3-1v4"></path>
+              </svg>
+            </button>
+            <button class="btn-icon fullscreen-nav-btn" id="btnFullscreenAddToPlaylist" title="More Options" aria-label="More options">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="12" cy="5" r="2"></circle>
+                <circle cx="12" cy="12" r="2"></circle>
+                <circle cx="12" cy="19" r="2"></circle>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="fullscreen-center">
+          <div class="vinyl-disc-container">
+            <div class="vinyl-disc" id="fullscreenVinyl">
+              <img src="assets/default-cover.svg" class="vinyl-artwork" id="fullscreenArtwork" alt="Record Cover" crossorigin="anonymous" />
+              <div class="vinyl-center-hole"></div>
+            </div>
+          </div>
+          <canvas class="visualizer-canvas" id="visualizerCanvas"></canvas>
+        </div>
+
+        <div class="fullscreen-bottom">
+          <!-- Main Player Control Card: Perfectly Aligns Track Info, Speed Badge, Progress Bar, Timestamps, Controls, and Sub-Controls -->
+          <div class="fullscreen-player-card">
+            <!-- Song Title and Artist (Left-aligned with the progress bar) -->
+            <div class="fullscreen-track-info">
+              <div class="fullscreen-title" id="fullscreenTitle">Select a track</div>
+              <div class="fullscreen-artist" id="fullscreenArtist">AppleTube</div>
+            </div>
+
+            <!-- 1. Playback Speed Badge (Directly above progress bar on the right side) -->
+            <div class="fullscreen-speed-row">
+              <button class="fullscreen-speed-badge" id="btnFullscreenSpeed" title="Playback speed" aria-label="Change playback speed">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+                <span id="fullscreenSpeedText">1.0x</span>
+              </button>
+            </div>
+
+            <!-- 2. Minimal Progress Seek Bar (Exact width matching from Shuffle button to Repeat button) -->
+            <div class="fullscreen-progress-row">
+              <div class="slider-bar fullscreen-slider-bar" id="fullscreenProgressSlider" role="slider" tabindex="0" aria-label="Seek through current song" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="00:00 of 00:00">
+                <div class="slider-fill" id="fullscreenProgressFill"></div>
+                <div class="slider-thumb" id="fullscreenProgressThumb"></div>
+                <div class="slider-tooltip" id="fullscreenProgressTooltip">00:00</div>
+              </div>
+            </div>
+
+            <!-- 3. Timestamps Directly Underneath Seek Bar (Current on left 100%, Remaining on right 60%) -->
+            <div class="fullscreen-time-row">
+              <span class="time-label fullscreen-time-label time-label-current" id="fullscreenTimeCurrent" title="Current playback time">00:00</span>
+              <span class="time-label fullscreen-time-label time-label-remaining" id="fullscreenTimeTotal" title="Click to toggle remaining time">00:00</span>
+            </div>
+
+            <!-- 4. Primary Transport Controls (Shuffle leftmost, Repeat rightmost, Play/Pause centered) -->
+            <div class="fullscreen-controls">
+              <button class="ctrl-btn" id="btnFullscreenShuffle" title="Shuffle" aria-label="Shuffle">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="16 3 21 3 21 8"></polyline>
+                  <line x1="4" y1="20" x2="21" y2="3"></line>
+                  <polyline points="21 16 21 21 16 21"></polyline>
+                  <line x1="15" y1="15" x2="21" y2="21"></line>
+                  <line x1="4" y1="4" x2="9" y2="9"></line>
+                </svg>
+              </button>
+              <button class="ctrl-btn" id="btnFullscreenPrev" title="Previous Track" aria-label="Previous Track">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                  <polygon points="19 20 9 12 19 4 19 20"></polygon>
+                  <line x1="5" y1="19" x2="5" y2="5" stroke="currentColor" stroke-width="2"></line>
+                </svg>
+              </button>
+              <button class="fullscreen-play-btn" id="fullscreenPlayBtn" title="Play / Pause" aria-label="Play or Pause">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
+                  <polygon points="6 3 20 12 6 21 6 3"></polygon>
+                </svg>
+              </button>
+              <button class="ctrl-btn" id="btnFullscreenNext" title="Next Track" aria-label="Next Track">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                  <polygon points="5 4 15 12 5 20 5 4"></polygon>
+                  <line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" stroke-width="2"></line>
+                </svg>
+              </button>
+              <button class="ctrl-btn" id="btnFullscreenRepeat" title="Repeat" aria-label="Repeat">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="17 1 21 5 17 9"></polyline>
+                  <path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
+                  <polyline points="7 23 3 19 7 15"></polyline>
+                  <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
+                </svg>
+              </button>
+            </div>
+
+            <!-- 5. Sub-Controls: Like Button on Far Left, AirPlay/Audio Output Button on Far Right -->
+            <div class="fullscreen-sub-controls">
+              <button class="fullscreen-like-btn" id="btnFullscreenLike" title="Like Song / Favorites" aria-label="Like song">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                </svg>
+              </button>
+              <button class="fullscreen-airplay-btn" id="btnFullscreenAirplay" title="Connect to a device / AirPlay" aria-label="Audio output">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 16.5l4 4.5H8l4-4.5z" fill="currentColor"></path>
+                  <path d="M7.8 14.8a6 6 0 0 1 8.4 0"></path>
+                  <path d="M4.9 11.9a10 10 0 0 1 14.2 0"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Hidden action elements preserved for seamless background compatibility -->
+          <div class="fullscreen-hidden-actions" style="display: none;" aria-hidden="true">
+            <button id="btnFullscreenDownload" title="Download Song"></button>
+            <button id="btnFullscreenShare" title="Share Song"></button>
+            <button id="btnFullscreenQueue" title="View Queue"></button>
+            <button class="sleep-pill-badge" id="fullscreenSleepPill"><span id="fullscreenSleepRemaining">30:00</span></button>
+          </div>
+
+          <!-- 6. Bottom Up Next Cue Handle -->
+          <div class="fullscreen-up-next-cue" id="btnFullscreenUpNext" role="button" tabindex="0" title="View Up Next & Recommendations">
+            <div class="up-next-handle"></div>
+            <span>Up Next</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== ANDROID INSTALL & PHONE CONNECT MODAL ==================== -->
+    <div class="modal-backdrop" id="mobileModal">
+      <div class="modal-box" style="text-align: center; align-items: center;">
+        <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
+          <div class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2">
+              <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+              <line x1="12" y1="18" x2="12.01" y2="18"></line>
+            </svg>
+            Install on Android Phone
+          </div>
+          <button class="btn-icon" id="btnCloseMobileModal" style="width: 32px; height: 32px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+
+        <div id="mobileQrContainer" style="margin: 10px 0; min-height: 190px; display: flex; align-items: center; justify-content: center;"></div>
+
+        <div style="font-size: 0.95rem; font-weight: 600; color: #fff; margin-bottom: 2px;">
+          Scan with your phone's camera
+        </div>
+        <div style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 14px;">
+          Or open this link in Chrome on your phone: <br />
+          <code id="mobileUrlText" style="color: var(--primary-light); background: rgba(255,255,255,0.08); padding: 3px 8px; border-radius: 6px; font-size: 0.85rem;">http://localhost:3000</code>
+        </div>
+
+        <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 14px; text-align: left; width: 100%; font-size: 0.82rem; color: var(--text-secondary); line-height: 1.6;">
+          <div style="color: #fff; font-weight: 600; margin-bottom: 6px;">How to install on Android:</div>
+          <div>1. Open the link above in <b>Google Chrome</b> on your Android phone.</div>
+          <div>2. Tap <b>"Install App"</b> banner at the top, or tap the 3 dots (⋮) and choose <b>"Install app"</b> or <b>"Add to Home screen"</b>.</div>
+          <div>3. AppleTube installs as an app on your home screen and plays YouTube music <b>in the background with your screen locked</b>!</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== CREATE PLAYLIST MODAL ==================== -->
+    <div class="modal-backdrop" id="playlistModal">
+      <div class="modal-box">
+        <div class="modal-title">Create New Playlist</div>
+        <form id="playlistForm">
+          <div style="margin-bottom: 14px;">
+            <label style="display: block; font-size: 0.84rem; color: var(--text-secondary); margin-bottom: 6px;">Playlist Name</label>
+            <input type="text" class="modal-input" id="playlistNameInput" placeholder="e.g. Late Night Vibes" required />
+          </div>
+          <div style="margin-bottom: 20px;">
+            <label style="display: block; font-size: 0.84rem; color: var(--text-secondary); margin-bottom: 6px;">Description (Optional)</label>
+            <input type="text" class="modal-input" id="playlistDescInput" placeholder="Give your playlist a vibe" />
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn-glass" id="btnCancelPlaylist">Cancel</button>
+            <button type="submit" class="btn-primary">Create</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- ==================== ADD TO PLAYLIST MODAL ==================== -->
+    <div class="modal-backdrop" id="addToPlaylistModal">
+      <div class="modal-box" style="max-width: 420px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <div class="modal-title" style="font-size: 1.15rem; font-weight: 700;">Add to Playlist</div>
+          <button class="btn-icon" id="btnCloseAddToPlaylistModal" title="Close" style="width: 32px; height: 32px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Target Track Summary Preview -->
+        <div id="addToPlaylistTrackSummary" style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08); border-radius: var(--radius-sm); margin-bottom: 14px;">
+          <img id="addToPlaylistThumb" src="assets/default-cover.svg" style="width: 44px; height: 44px; border-radius: 8px; object-fit: cover; flex-shrink: 0;" alt="Track Cover" />
+          <div style="min-width: 0; flex: 1;">
+            <div id="addToPlaylistTitle" style="font-weight: 600; font-size: 0.92rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #fff;">Track Title</div>
+            <div id="addToPlaylistArtist" style="font-size: 0.78rem; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Artist Name</div>
+          </div>
+        </div>
+
+        <!-- Sleep Mode Quick Option in More/Options Menu -->
+        <button type="button" class="btn-more-sleep-option" id="btnOpenSleepFromOptions">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <div class="sleep-icon-box">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+              </svg>
+            </div>
+            <div style="text-align: left;">
+              <div style="font-weight: 600; font-size: 0.92rem; color: #fff;">Sleep Mode</div>
+              <div id="moreSleepStatus" style="font-size: 0.78rem; color: var(--text-secondary);">Set timer to auto-stop playback</div>
+            </div>
+          </div>
+          <span class="sleep-status-tag" id="moreSleepTag">Off</span>
+        </button>
+
+        <!-- Quick "New Playlist" Action -->
+        <button type="button" class="btn-primary" id="btnCreateNewFromAddToPlaylist" style="width: 100%; justify-content: center; gap: 8px; padding: 10px 14px; margin-bottom: 14px; font-size: 0.9rem;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          <span>Create New Playlist</span>
+        </button>
+
+        <div style="font-size: 0.76rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">
+          Your Playlists
+        </div>
+
+        <!-- User Playlists List -->
+        <div id="addToPlaylistItems" style="max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 2px;">
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== SLEEP MODE MODAL ==================== -->
+    <div class="modal-backdrop" id="sleepModal">
+      <div class="modal-box sleep-modal-box">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+            </svg>
+            <div class="modal-title" style="font-size: 1.2rem; font-weight: 700;">Sleep Mode</div>
+          </div>
+          <button class="btn-icon" id="btnCloseSleepModal" title="Close" style="width: 32px; height: 32px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Inactive / Selection State -->
+        <div id="sleepSetupView">
+          <div style="font-size: 0.92rem; color: var(--text-secondary); margin-bottom: 14px;">How long?</div>
+          <div class="sleep-presets-grid">
+            <button type="button" class="sleep-preset-btn active" data-mins="15">15 min</button>
+            <button type="button" class="sleep-preset-btn" data-mins="30">30 min</button>
+            <button type="button" class="sleep-preset-btn" data-mins="45">45 min</button>
+            <button type="button" class="sleep-preset-btn" data-mins="60">60 min</button>
+            <button type="button" class="sleep-preset-btn" data-mins="90">90 min</button>
+            <button type="button" class="sleep-preset-btn" data-mins="custom">Custom</button>
+          </div>
+
+          <div id="sleepCustomInputWrap" style="display: none; margin-top: 12px;">
+            <label style="display: block; font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 6px;">Duration in minutes</label>
+            <input type="number" id="sleepCustomMinutes" class="modal-input" min="1" max="480" placeholder="e.g. 25" />
+          </div>
+
+          <button type="button" class="btn-primary" id="btnStartSleepMode" style="width: 100%; justify-content: center; padding: 12px; margin-top: 18px; font-size: 0.95rem; font-weight: 600;">
+            Start Sleep Mode
+          </button>
+        </div>
+
+        <!-- Active Countdown State -->
+        <div id="sleepActiveView" style="display: none; text-align: center; padding: 10px 0;">
+          <div class="sleep-countdown-wrap">
+            <div class="sleep-countdown-timer" id="sleepCountdownDisplay">29:42</div>
+            <div class="sleep-countdown-label">remaining</div>
+          </div>
+          <div id="sleepFadeNotice" style="font-size: 0.82rem; color: var(--warning); margin: 8px 0; min-height: 18px; display: none;">
+            Fading audio smoothly into the night...
+          </div>
+          <div style="display: flex; gap: 10px; margin-top: 20px;">
+            <button type="button" class="btn-secondary" id="btnChangeSleepTimer" style="flex: 1; justify-content: center; padding: 10px;">
+              Change Timer
+            </button>
+            <button type="button" class="btn-danger" id="btnCancelSleepMode" style="flex: 1; justify-content: center; padding: 10px;">
+              Cancel Sleep Mode
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== USER AUTH MODAL (GOOGLE OAUTH & ACCOUNT) ==================== -->
+    <div class="modal-backdrop" id="authModal">
+      <div class="modal-box auth-modal-box">
+        <!-- Modal Header -->
+        <div class="auth-modal-header">
+          <div class="auth-modal-branding">
+            <img src="assets/logo.svg" alt="AppleTube" class="auth-modal-logo" />
+            <div>
+              <div class="modal-title" style="font-size: 1.25rem; font-weight: 700; letter-spacing: -0.3px;">Sign In to AppleTube</div>
+              <div class="auth-modal-subtitle">Sync your playlists, liked tracks, and history across all devices</div>
+            </div>
+          </div>
+          <button class="btn-icon" id="btnCloseAuthModal" title="Close" style="width: 32px; height: 32px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Primary Action: Continue with Google -->
+        <div class="google-auth-section">
+          <!-- Branded Official Google Sign-In Button (Triggers Google Account Chooser) -->
+          <button type="button" class="btn-google-sign-in" id="btnContinueWithGoogle" title="Sign in with your Google account">
+            <svg class="google-icon" viewBox="0 0 24 24" width="22" height="22">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+            </svg>
+            <span id="btnGoogleText">Continue with Google</span>
+          </button>
+
+          <!-- Official Google Identity Services SDK Render Target -->
+          <div id="googleSignInBtnContainer" style="display: none; justify-content: center; margin-bottom: 8px;"></div>
+
+          <!-- Unconfigured Google Client ID helper banner -->
+          <div id="googleConfigNotice" style="display: none; margin-top: 10px; background: rgba(66, 133, 244, 0.08); border: 1px dashed rgba(66, 133, 244, 0.35); border-radius: var(--radius-sm); padding: 12px; font-size: 0.82rem; color: var(--text-secondary); line-height: 1.45;">
+            <div style="font-weight: 600; color: #60a5fa; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+              Google OAuth Setup Required
+            </div>
+            <div>To authenticate with Google, add your <strong>Google OAuth Client ID</strong> to <code style="color: #fff; background: rgba(255,255,255,0.1); padding: 1px 4px; border-radius: 4px;">js/config.js</code> or launch with <code style="color: #fff; background: rgba(255,255,255,0.1); padding: 1px 4px; border-radius: 4px;">GOOGLE_CLIENT_ID=... ./start.sh</code>.</div>
+          </div>
+        </div>
+
+        <!-- Error feedback -->
+        <div id="authErrorMsg" style="color: #f87171; font-size: 0.84rem; min-height: 18px; margin-top: 4px; text-align: center;"></div>
+
+        <!-- Subtle Divider -->
+        <div class="auth-divider">
+          <span>or continue with password</span>
+        </div>
+
+        <!-- Secondary Password Sign In / Create Account -->
+        <div class="auth-password-section">
+          <div style="display: flex; gap: 8px; margin-bottom: 12px; background: rgba(255,255,255,0.06); padding: 3px; border-radius: var(--radius-sm);">
+            <button type="button" class="btn-ghost" id="subTabLogin" style="flex: 1; height: 30px; font-size: 0.8rem; background: rgba(255,255,255,0.12); color: #fff;">Sign In</button>
+            <button type="button" class="btn-ghost" id="subTabRegister" style="flex: 1; height: 30px; font-size: 0.8rem; color: var(--text-secondary);">Create Account</button>
+          </div>
+
+          <form id="authForm">
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+              <div>
+                <label style="display: block; font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 5px;">Username</label>
+                <input type="text" class="modal-input" id="authUsernameInput" placeholder="Choose a username" required autocomplete="username" />
+              </div>
+
+              <div id="authEmailGroup" style="display: none;">
+                <label style="display: block; font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 5px;">Email (Optional)</label>
+                <input type="email" class="modal-input" id="authEmailInput" placeholder="name@example.com" autocomplete="email" />
+              </div>
+
+              <div>
+                <label style="display: block; font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 5px;">Password</label>
+                <input type="password" class="modal-input" id="authPasswordInput" placeholder="Enter your password" required autocomplete="current-password" />
+              </div>
+
+              <div class="modal-actions" style="margin-top: 4px;">
+                <button type="submit" class="btn-primary" id="authSubmitBtn" style="width: 100%; justify-content: center; padding: 11px;">Sign In</button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== USER MENU / PROFILE MODAL ==================== -->
+    <div class="modal-backdrop" id="userMenuModal">
+      <div class="modal-box" style="max-width: 380px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div class="user-avatar-circle" style="width: 38px; height: 38px; font-size: 1.1rem;">👤</div>
+            <div>
+              <div id="userMenuName" style="font-size: 1.1rem; font-weight: 700;">Username</div>
+              <div id="userMenuEmail" style="font-size: 0.8rem; color: var(--text-secondary);">user@example.com</div>
+            </div>
+          </div>
+          <button class="btn-icon" id="btnCloseUserMenu" title="Close" style="width: 32px; height: 32px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+
+        <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 12px; font-size: 0.82rem; color: var(--text-secondary); line-height: 1.5;">
+          Your music collection (Liked songs, custom playlists, listening history) automatically syncs across all your devices when signed in.
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <button class="btn-glass" id="btnSyncCollection" style="justify-content: center; gap: 8px; padding: 12px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+            </svg>
+            <span>Sync Collection to Cloud</span>
+          </button>
+          <button class="btn-glass" id="btnLogout" style="justify-content: center; gap: 8px; padding: 12px; color: #f87171; border-color: rgba(239, 68, 68, 0.3);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+              <polyline points="16 17 21 12 16 7"></polyline>
+              <line x1="21" y1="12" x2="9" y2="12"></line>
+            </svg>
+            <span>Sign Out</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== SHARE SONG MODAL ==================== -->
+    <div class="modal-backdrop" id="shareModal">
+      <div class="modal-box share-box" style="max-width: 440px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; width: 100%;">
+          <div class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="18" cy="5" r="3"></circle>
+              <circle cx="6" cy="12" r="3"></circle>
+              <circle cx="18" cy="19" r="3"></circle>
+              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+            </svg>
+            <span>Share Music</span>
+          </div>
+          <button class="btn-icon" id="btnCloseShareModal" title="Close" style="width: 32px; height: 32px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Song Preview Card -->
+        <div id="shareSongPreview" style="display: flex; align-items: center; gap: 14px; padding: 12px 14px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08); border-radius: var(--radius-md); margin-bottom: 16px;">
+          <img id="shareSongThumb" src="assets/default-cover.svg" style="width: 52px; height: 52px; border-radius: 10px; object-fit: cover; flex-shrink: 0;" alt="Song Artwork" />
+          <div style="min-width: 0; flex: 1;">
+            <div id="shareSongTitle" style="font-weight: 700; font-size: 0.96rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #fff;">Song Title</div>
+            <div id="shareSongArtist" style="font-size: 0.82rem; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Artist</div>
+          </div>
+        </div>
+
+        <!-- Share Options Grid -->
+        <div class="share-options-grid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px;">
+          <button class="share-platform-btn" id="btnShareWhatsApp" title="Share to WhatsApp" style="display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 4px; background: rgba(37,211,102,0.12); border: 1px solid rgba(37,211,102,0.25); border-radius: 12px; color: #25d366; cursor: pointer;">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/>
+            </svg>
+            <span style="font-size: 0.72rem; font-weight: 600;">WhatsApp</span>
+          </button>
+          <button class="share-platform-btn" id="btnShareTelegram" title="Share to Telegram" style="display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 4px; background: rgba(0,136,204,0.12); border: 1px solid rgba(0,136,204,0.25); border-radius: 12px; color: #29b6f6; cursor: pointer;">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 0 0-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.75-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z"/>
+            </svg>
+            <span style="font-size: 0.72rem; font-weight: 600;">Telegram</span>
+          </button>
+          <button class="share-platform-btn" id="btnShareTwitter" title="Share to X / Twitter" style="display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 4px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 12px; color: #ffffff; cursor: pointer;">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+            </svg>
+            <span style="font-size: 0.72rem; font-weight: 600;">X / Twitter</span>
+          </button>
+          <button class="share-platform-btn" id="btnShareNative" title="More Share Options" style="display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 4px; background: rgba(250,45,72,0.12); border: 1px solid rgba(250,45,72,0.25); border-radius: 12px; color: var(--apple-pink, #fa2d48); cursor: pointer;">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="1"></circle>
+              <circle cx="19" cy="12" r="1"></circle>
+              <circle cx="5" cy="12" r="1"></circle>
+            </svg>
+            <span style="font-size: 0.72rem; font-weight: 600;">More</span>
+          </button>
+        </div>
+
+        <!-- Copy Link Row -->
+        <div style="display: flex; gap: 8px; width: 100%;">
+          <input type="text" id="shareLinkInput" readonly style="flex: 1; padding: 10px 14px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: var(--radius-sm); font-size: 0.85rem; color: var(--text-secondary);" />
+          <button class="btn-primary" id="btnCopyShareLink" style="padding: 10px 18px; font-size: 0.88rem; gap: 6px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+            <span id="btnCopyShareLinkText">Copy</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== MOOD PICKER MODAL (SAD TO SAD, HAPPY TO HAPPY) ==================== -->
+    <div class="modal-backdrop" id="moodModal">
+      <div class="modal-box" style="max-width: 440px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <div class="modal-title">Select Music Vibe</div>
+            <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px;">
+              Smart Autoplay will queue and play songs matching this vibe
+            </div>
+          </div>
+          <button class="btn-icon" id="btnCloseMoodModal" title="Close" style="width: 32px; height: 32px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        <div class="mood-picker-options" id="moodPickerOptions"></div>
+      </div>
+    </div>
+
+    <!-- Hidden Local File Input -->
+    <input type="file" id="localFileInput" accept="audio/*,.mp3,.wav,.ogg,.flac,.m4a,.aac" multiple style="display: none;" />
+
+    <!-- Toast Notifications Container -->
+    <div class="toast-container" id="toastContainer"></div>
+  </div>
+
+  <!-- Main JavaScript App Entry -->
+  <script type="module" src="js/app.js?v=19"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "name": "appletube",
+  "version": "1.0.0",
+  "description": "AppleTube - Apple Music style streaming app with live YouTube playback",
+  "type": "module",
+  "main": "index.html",
+  "scripts": {
+    "start": "python3 server.py 3000",
+    "serve": "npx serve ."
+  },
+  "keywords": ["apple-music", "appletube", "streaming", "ad-free", "youtube-music", "audio-player"],
+  "author": "AppleTube Team",
+  "license": "MIT"
+}

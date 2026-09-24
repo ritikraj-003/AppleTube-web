@@ -1,0 +1,87 @@
+{
+  "user_g_ca7d9dc8fe4f": {
+    "id": "user_g_ca7d9dc8fe4f",
+    "username": "user",
+    "email": "user@gmail.com",
+    "picture": "",
+    "google_id": "",
+    "auth_provider": "google",
+    "created_at": 1790025888,
+    "collection": {
+      "liked": [],
+      "playlists": [
+        {
+          "id": "pl_favorites",
+          "name": "My Favorites",
+          "description": "Your favorite tracks",
+          "createdAt": 1790025888207,
+          "tracks": []
+        }
+      ],
+      "recent": []
+    }
+  },
+  "user_p_1da2f665ff6f": {
+    "id": "user_p_1da2f665ff6f",
+    "username": "Ritik Test",
+    "phone": "+919876543210",
+    "auth_provider": "phone",
+    "created_at": 1790160258,
+    "collection": {
+      "liked": [],
+      "playlists": [
+        {
+          "id": "pl_favorites",
+          "name": "My Favorites",
+          "description": "Your favorite tracks",
+          "createdAt": 1790160258416,
+          "tracks": []
+        }
+      ],
+      "recent": []
+    }
+  },
+  "user_g_7177955181dc": {
+    "id": "user_g_7177955181dc",
+    "username": "Ritik Google",
+    "email": "ritik.music@gmail.com",
+    "picture": "",
+    "google_id": "",
+    "auth_provider": "google",
+    "created_at": 1790160258,
+    "collection": {
+      "liked": [],
+      "playlists": [
+        {
+          "id": "pl_favorites",
+          "name": "My Favorites",
+          "description": "Your favorite tracks",
+          "createdAt": 1790160258417,
+          "tracks": []
+        }
+      ],
+      "recent": []
+    }
+  },
+  "user_b53b50c7586c": {
+    "id": "user_b53b50c7586c",
+    "username": "testlocal",
+    "email": "local@test.com",
+    "password_hash": "953d68ef252de412d8717be27a0e179c9b6b4694780af13ad0c46feff163518e",
+    "salt": "a1a2428fc6084f8dbe23e3c212a85c05",
+    "created_at": 1790194619,
+    "collection": {
+      "liked": [],
+      "playlists": [
+        {
+          "id": "pl_favorites",
+          "name": "My Favorites",
+          "description": "Your favorite tracks",
+          "createdAt": 1790194619554,
+          "tracks": []
+        }
+      ],
+      "recent": []
+    }
+  }
+}

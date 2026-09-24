@@ -1,0 +1,182 @@
+/* ==========================================================================
+   AppleTube - Apple Music Design System & Layout Grid
+   ========================================================================== */
+
+:root {
+  /* Apple Music OLED Dark Color Palette */
+  --bg-base: #000000;
+  --bg-surface: #121214;
+  --bg-card: #1c1c1e;
+  --bg-card-hover: #2c2c2e;
+  --bg-glass: rgba(24, 24, 26, 0.82);
+  --bg-glass-heavy: rgba(16, 16, 18, 0.94);
+  --bg-elevated: #242426;
+
+  /* Official Apple Music Accents */
+  --primary: #fa2d48;
+  --primary-hover: #e0203a;
+  --primary-light: #fc5c72;
+  --primary-glow: rgba(250, 45, 72, 0.35);
+  --secondary: #fc3c44;
+  --accent: #fa2d48;
+  --success: #34c759;
+  --warning: #ff9f0a;
+  --danger: #ff453a;
+
+  /* Apple Music Gradients */
+  --grad-primary: linear-gradient(135deg, #fa243c 0%, #f9385d 50%, #ee104e 100%);
+  --grad-subtle: linear-gradient(180deg, rgba(250, 45, 72, 0.15) 0%, rgba(0, 0, 0, 0) 100%);
+  --grad-card: linear-gradient(145deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.01) 100%);
+  --grad-hero: linear-gradient(135deg, rgba(250, 36, 60, 0.45) 0%, rgba(238, 16, 78, 0.22) 100%);
+
+  /* Apple Typography Colors */
+  --text-primary: #ffffff;
+  --text-secondary: #98989f;
+  --text-muted: #636366;
+  --text-dim: #48484a;
+
+  /* Apple Borders & Shadows */
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-active: rgba(250, 45, 72, 0.4);
+  --shadow-sm: 0 4px 10px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 10px 25px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 20px 45px rgba(0, 0, 0, 0.8);
+  --shadow-glow: 0 0 25px var(--primary-glow);
+
+  /* Dynamic Music Timeline Theme */
+  --timeline-accent: #fa2d48;
+  --timeline-accent-glow: rgba(250, 45, 72, 0.65);
+  --timeline-accent-glow-subtle: rgba(250, 45, 72, 0.25);
+  --timeline-remaining: rgba(255, 255, 255, 0.24);
+  --timeline-remaining-glow: rgba(255, 255, 255, 0.12);
+
+  /* Layout Sizing */
+  --sidebar-width: 250px;
+  --player-height: 84px;
+  --header-height: 68px;
+  --tabbar-height: 62px;
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-full: 9999px;
+
+  /* Transitions */
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Global Reset */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  user-select: none;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+/* Base App Layout */
+#app {
+  display: grid;
+  grid-template-columns: var(--sidebar-width) 1fr;
+  grid-template-rows: 1fr var(--player-height);
+  grid-template-areas:
+    "sidebar main"
+    "player  player";
+  width: 100vw;
+  height: 100vh;
+  position: relative;
+  background-color: var(--bg-base);
+  overflow: hidden;
+}
+
+/* Interactive Elements */
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  font-family: inherit;
+  color: inherit;
+  outline: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+}
+
+button:active {
+  transform: scale(0.96);
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+input {
+  font-family: inherit;
+  outline: none;
+  border: none;
+  color: var(--text-primary);
+}
+
+/* Utility Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pulseGlow {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50% { opacity: 0.9; transform: scale(1.03); }
+}
+
+@keyframes eqBounce {
+  0%, 100% { height: 4px; }
+  50% { height: 16px; }
+}
+
+.fade-in {
+  animation: fadeIn var(--transition-normal) forwards;
+}
+
+/* Accessible focus ring */
+button:focus-visible, a:focus-visible, input:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}

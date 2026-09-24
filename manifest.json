@@ -1,0 +1,38 @@
+{
+  "id": "appletube.music.android",
+  "name": "AppleTube - Music & Background Audio",
+  "short_name": "AppleTube",
+  "description": "Stream millions of songs from YouTube and worldwide radio ad-free with background playback.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "categories": ["music", "entertainment", "audio"],
+  "icons": [
+    {
+      "src": "assets/logo.svg",
+      "sizes": "72x72 96x96 128x128 144x144 192x192 384x384 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Search Songs",
+      "url": "./index.html?action=search",
+      "description": "Search YouTube and online music"
+    },
+    {
+      "name": "Liked Songs",
+      "url": "./index.html?action=liked",
+      "description": "Listen to your saved music"
+    },
+    {
+      "name": "Live Radio",
+      "url": "./index.html?action=radio",
+      "description": "Stream 24/7 live internet radio"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="appleMusicGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fa243c"/>
+      <stop offset="50%" stop-color="#f8365d"/>
+      <stop offset="100%" stop-color="#ee104e"/>
+    </linearGradient>
+    <filter id="subtleShadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <!-- Apple Style Rounded Squircle -->
+  <rect width="512" height="512" rx="115" fill="url(#appleMusicGrad)"/>
+  <!-- Apple Music Official Double Beamed Eighth Note -->
+  <path fill="#ffffff" filter="url(#subtleShadow)" d="M375.2 111.4c-2.8-1.2-6-1.5-9-.8l-155 35.8c-7.2 1.7-12.2 8.1-12.2 15.5v198.8c-10.4-5.3-23.2-8.2-37-7.7-29.2 1.1-52.5 19.5-52 41.2.5 21.6 24.6 38.3 53.8 37.2 28.5-1.1 51.5-18.7 52-39.9l.2-146.4 135-31.2v105c-10.4-5.3-23.2-8.2-37-7.7-29.2 1.1-52.5 19.5-52 41.2.5 21.6 24.6 38.3 53.8 37.2 28.5-1.1 51.5-18.7 52-39.9l.2-171.8c0-5.8-3.4-11.1-8.8-13.6zM224 200.7V174.5l135-31.2v26.2L224 200.7z"/>
+</svg>
