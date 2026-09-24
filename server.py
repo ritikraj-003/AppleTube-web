@@ -1179,6 +1179,35 @@ class AuraMusicHandler(SimpleHTTPRequestHandler):
 
         self.send_error(404, "Endpoint not found")
 
+    def do_HEAD(self):
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+        params = urllib.parse.parse_qs(parsed.query)
+
+        if path == '/api/yt/audio':
+            video_id = params.get('id', [''])[0].strip()
+            if not video_id:
+                self.send_error(400, "Missing video id parameter")
+                return
+            stream_url = resolve_youtube_audio_stream(video_id)
+            if not stream_url:
+                stream_url = f"https://inv.nadeko.net/latest_version?id={video_id}&itag=140"
+            self.send_response(302)
+            self.send_header('Location', stream_url)
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Accept-Ranges', 'bytes')
+            self.send_header('Content-Type', 'audio/mp4')
+            self.end_headers()
+            return
+        elif path.startswith('/api/'):
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            return
+
+        return super().do_HEAD()
+
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path

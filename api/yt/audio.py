@@ -16,4 +16,9 @@ class handler(BaseHTTPRequestHandler):
         self.send_response(302)
         self.send_header("Location", stream_url)
         self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Type", "audio/mp4")
         self.end_headers()
+
+    def do_HEAD(self):
+        self.do_GET()

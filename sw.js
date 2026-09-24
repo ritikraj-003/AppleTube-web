@@ -46,12 +46,14 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Pass through audio streaming and external API requests directly
+  // Pass through audio streaming, byte-range requests, and API requests directly
   const requestUrl = new URL(event.request.url);
   if (
     requestUrl.origin !== location.origin ||
+    requestUrl.pathname.startsWith('/api/') ||
     event.request.destination === 'audio' ||
     event.request.destination === 'video' ||
+    event.request.headers.has('range') ||
     event.request.method !== 'GET'
   ) {
     return;

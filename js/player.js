@@ -17,6 +17,7 @@ class AudioPlayer {
     // Crucial for mobile / Android background audio
     this.audio.setAttribute('playsinline', 'true');
     this.audio.setAttribute('webkit-playsinline', 'true');
+    this.audio.autoplay = false;
 
     this.currentTrack = null;
     this.queue = [];
@@ -80,9 +81,17 @@ class AudioPlayer {
 
   // --- Initialize Web Audio Analyser ---
   initAudioContext() {
+    // Avoid hijacking native <audio> on mobile / Android where Web Audio suspension silences background audio.
+    // The visualizer smoothly falls back to simulated harmonics on mobile devices.
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    if (isMobile) {
+      this.audioConnected = false;
+      return;
+    }
+
     if (this.audioCtx) {
       if (this.audioCtx.state === 'suspended') {
-        this.audioCtx.resume();
+        this.audioCtx.resume().catch(() => {});
       }
       return;
     }
@@ -129,9 +138,7 @@ class AudioPlayer {
   }
 
   bindVisibilityEvents() {
-    // Re-acquire wakeLock and resume AudioContext when the page becomes visible.
-    // This is critical on Android: the browser may suspend the AudioContext
-    // when the screen locks or the app backgrounds, causing audio to cut out.
+    // Re-acquire wakeLock, resume AudioContext, and re-sync foreground UI
     document.addEventListener('visibilitychange', async () => {
       if (document.visibilityState === 'visible') {
         // Resume AudioContext if it was suspended by the browser
@@ -142,18 +149,18 @@ class AudioPlayer {
         if (!this.audio.paused || this.isYtPlaying) {
           await this.requestWakeLock();
         }
+        // Re-sync UI with true background player state
+        this.resyncForegroundUI();
       } else if (document.visibilityState === 'hidden') {
-        // Page going hidden — wakeLock auto-releases on Android, we'll re-acquire on visible.
-        // Do NOT stop or pause audio here — that would break background playback.
+        // Page going hidden — do NOT stop or pause audio here.
       }
     });
 
-    // Handle Page Lifecycle API events (Android Chrome bfcache / freeze)
-    // 'freeze' fires when the page is being frozen (e.g., bfcached) — safe to no-op.
-    // 'resume' fires when the frozen page resumes.
+    // Handle Page Lifecycle API events (Android Chrome bfcache / freeze / resume)
     window.addEventListener('freeze', () => {
-      // Do NOT pause audio — let the browser handle freeze naturally
+      // Do NOT pause audio
     });
+
     window.addEventListener('resume', async () => {
       if (this.audioCtx && this.audioCtx.state === 'suspended') {
         this.audioCtx.resume().catch(() => {});
@@ -161,6 +168,7 @@ class AudioPlayer {
       if (!this.audio.paused || this.isYtPlaying) {
         await this.requestWakeLock();
       }
+      this.resyncForegroundUI();
     });
 
     // 'pageshow' fires when the page is shown from bfcache
@@ -171,7 +179,31 @@ class AudioPlayer {
         }
         await this.requestWakeLock();
       }
+      this.resyncForegroundUI();
     });
+  }
+
+  resyncForegroundUI() {
+    if (!this.currentTrack) return;
+    try {
+      this.notify('trackChange', this.currentTrack);
+      const isPlaying = this.usingYtPlayer ? this.isYtPlaying : !this.audio.paused;
+      this.notify('playbackChange', isPlaying);
+      const cur = this.currentTime;
+      const dur = this.duration;
+      const percent = dur > 0 ? (cur / dur) * 100 : 0;
+      this.notify('timeUpdate', { current: cur, duration: dur, percent });
+      this.notify('queueUpdate', {
+        queue: this.queue,
+        index: this.currentIndex,
+        seedTrack: this.seedTrack,
+        userQueue: this.userQueue,
+        recommendationQueue: this.recommendationQueue
+      });
+      this.updateMediaSessionPosition(cur, dur);
+    } catch (e) {
+      console.warn('Error resyncing foreground UI:', e);
+    }
   }
 
   // --- YouTube IFrame API Fallback Loader ---
@@ -326,6 +358,7 @@ class AudioPlayer {
       }
       this.notify('playbackChange', true);
       this.updateMediaSessionPlaybackState('playing');
+      this.updateMediaSessionPosition();
       this.requestWakeLock();
     });
 
@@ -333,6 +366,7 @@ class AudioPlayer {
       if (!this.usingYtPlayer) {
         this.notify('playbackChange', false);
         this.updateMediaSessionPlaybackState('paused');
+        this.updateMediaSessionPosition();
         this.releaseWakeLock();
       }
     });
@@ -348,6 +382,24 @@ class AudioPlayer {
         }
         this.notify('timeUpdate', { current, duration, percent });
         this.updateMediaSessionPosition(current, duration);
+      }
+    });
+
+    this.audio.addEventListener('seeking', () => {
+      if (!this.usingYtPlayer) {
+        this.updateMediaSessionPosition();
+      }
+    });
+
+    this.audio.addEventListener('seeked', () => {
+      if (!this.usingYtPlayer) {
+        this.updateMediaSessionPosition();
+      }
+    });
+
+    this.audio.addEventListener('ratechange', () => {
+      if (!this.usingYtPlayer) {
+        this.updateMediaSessionPosition();
       }
     });
 
@@ -487,48 +539,66 @@ class AudioPlayer {
   initMediaSession() {
     if (!('mediaSession' in navigator)) return;
 
-    navigator.mediaSession.setActionHandler('play', () => this.resume());
-    navigator.mediaSession.setActionHandler('pause', () => this.pause());
-    navigator.mediaSession.setActionHandler('previoustrack', () => this.previous());
-    navigator.mediaSession.setActionHandler('nexttrack', () => this.next());
-    navigator.mediaSession.setActionHandler('seekto', (details) => {
-      if (details.seekTime !== undefined) {
-        this.seekTo(details.seekTime);
-      }
-    });
-    navigator.mediaSession.setActionHandler('seekbackward', () => {
-      const cur = this.usingYtPlayer ? (typeof this.ytPlayer?.getCurrentTime === 'function' ? this.ytPlayer.getCurrentTime() : 0) : this.audio.currentTime;
-      this.seekTo(Math.max(0, cur - 10));
-    });
-    navigator.mediaSession.setActionHandler('seekforward', () => {
-      const cur = this.usingYtPlayer ? (typeof this.ytPlayer?.getCurrentTime === 'function' ? this.ytPlayer.getCurrentTime() : 0) : this.audio.currentTime;
-      const dur = this.usingYtPlayer ? (typeof this.ytPlayer?.getDuration === 'function' ? this.ytPlayer.getDuration() : 0) : this.audio.duration;
-      this.seekTo(Math.min(dur || 0, cur + 10));
-    });
-    navigator.mediaSession.setActionHandler('stop', () => {
-      this.pause();
-      this.seekTo(0);
-    });
+    try {
+      navigator.mediaSession.setActionHandler('play', () => this.resume());
+      navigator.mediaSession.setActionHandler('pause', () => this.pause());
+      navigator.mediaSession.setActionHandler('previoustrack', () => this.previous());
+      navigator.mediaSession.setActionHandler('nexttrack', () => this.next());
+      navigator.mediaSession.setActionHandler('seekto', (details) => {
+        if (details && details.seekTime !== undefined) {
+          this.seekTo(details.seekTime);
+        }
+      });
+      navigator.mediaSession.setActionHandler('seekbackward', (details) => {
+        const skip = (details && details.seekOffset) || 10;
+        this.seekTo(Math.max(0, this.currentTime - skip));
+      });
+      navigator.mediaSession.setActionHandler('seekforward', (details) => {
+        const skip = (details && details.seekOffset) || 10;
+        const dur = this.duration || 0;
+        this.seekTo(Math.min(dur, this.currentTime + skip));
+      });
+      navigator.mediaSession.setActionHandler('stop', () => {
+        this.pause();
+        this.seekTo(0);
+      });
+    } catch (err) {
+      console.warn('Error configuring MediaSession action handlers:', err);
+    }
   }
 
   updateMediaSessionMetadata() {
     if (!('mediaSession' in navigator) || !this.currentTrack) return;
 
-    const img = this.currentTrack.image || 'assets/default-cover.svg';
+    try {
+      const rawImg = this.currentTrack.image || 'assets/default-cover.svg';
+      let fullImgUrl = rawImg;
+      try {
+        fullImgUrl = new URL(rawImg, window.location.href).href;
+      } catch (e) {
+        fullImgUrl = rawImg;
+      }
 
-    navigator.mediaSession.metadata = new MediaMetadata({
-      title: this.currentTrack.title || 'Aura Track',
-      artist: this.currentTrack.artist || 'Aura Music',
-      album: this.currentTrack.album || 'Live Music',
-      artwork: [
-        { src: img, sizes: '96x96', type: 'image/jpeg' },
-        { src: img, sizes: '128x128', type: 'image/jpeg' },
-        { src: img, sizes: '192x192', type: 'image/jpeg' },
-        { src: img, sizes: '256x256', type: 'image/jpeg' },
-        { src: img, sizes: '384x384', type: 'image/jpeg' },
-        { src: img, sizes: '512x512', type: 'image/jpeg' }
-      ]
-    });
+      const mimeType = fullImgUrl.includes('.svg')
+        ? 'image/svg+xml'
+        : (fullImgUrl.includes('.png') ? 'image/png' : 'image/jpeg');
+
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: this.currentTrack.title || 'AppleTube Track',
+        artist: this.currentTrack.artist || 'AppleTube Artist',
+        album: this.currentTrack.album || 'AppleTube Music',
+        artwork: [
+          { src: fullImgUrl, sizes: '96x96', type: mimeType },
+          { src: fullImgUrl, sizes: '128x128', type: mimeType },
+          { src: fullImgUrl, sizes: '192x192', type: mimeType },
+          { src: fullImgUrl, sizes: '256x256', type: mimeType },
+          { src: fullImgUrl, sizes: '384x384', type: mimeType },
+          { src: fullImgUrl, sizes: '512x512', type: mimeType }
+        ]
+      });
+    } catch (e) {
+      console.warn('Error updating MediaSession metadata:', e);
+    }
   }
 
   updateMediaSessionPlaybackState(state) {
@@ -539,16 +609,16 @@ class AudioPlayer {
   }
 
   updateMediaSessionPosition(current = null, duration = null) {
-    if (!('mediaSession' in navigator) || !('setPositionState' in navigator.mediaSession)) return;
+    if (!('mediaSession' in navigator) || typeof navigator.mediaSession.setPositionState !== 'function') return;
     try {
       const dur = duration ?? (this.usingYtPlayer ? (typeof this.ytPlayer?.getDuration === 'function' ? this.ytPlayer.getDuration() : 0) : this.audio.duration);
       const cur = current ?? (this.usingYtPlayer ? (typeof this.ytPlayer?.getCurrentTime === 'function' ? this.ytPlayer.getCurrentTime() : 0) : this.audio.currentTime);
 
-      if (dur && !isNaN(dur) && isFinite(dur) && cur !== null && !isNaN(cur)) {
+      if (dur && !isNaN(dur) && isFinite(dur) && dur > 0 && cur !== null && !isNaN(cur) && isFinite(cur)) {
         navigator.mediaSession.setPositionState({
           duration: dur,
-          playbackRate: 1,
-          position: Math.min(cur, dur)
+          playbackRate: this.playbackRate || 1.0,
+          position: Math.min(Math.max(0, cur), dur)
         });
       }
     } catch (e) {}
@@ -778,26 +848,18 @@ class AudioPlayer {
 
     StorageManager.addRecentTrack(this.currentTrack);
 
-    const isLocalDevelopment = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
-    if (this.currentTrack.videoId && !isLocalDevelopment) {
-      this.audio.pause();
-      this.audio.removeAttribute('src');
-      this.audio.load();
-      this.setupYouTubePlayer(this.currentTrack.videoId);
-      return;
-    }
-
+    // Primary audio engine: play via native HTML5 <audio> for uninterrupted background playback
     const playPromise = this.audio.play();
     if (playPromise !== undefined) {
       playPromise.catch(err => {
         console.info('Direct audio stream pending or failed, evaluating fallback:', err);
-        // If YouTube track fails immediately, try fallback
+        // If direct stream fails to play after delay and track has videoId, evaluate fallback
         if (this.currentTrack?.videoId) {
           setTimeout(() => {
             if (this.audio.paused && !this.isYtPlaying && !this.usingYtPlayer) {
               this.fallbackToYouTubeIframe();
             }
-          }, 1500);
+          }, 3000);
         }
       });
     }
@@ -856,8 +918,13 @@ class AudioPlayer {
       this.isYtPlaying = false;
       this.notify('playbackChange', false);
       this.updateMediaSessionPlaybackState('paused');
+      this.releaseWakeLock();
     } else {
       this.audio.pause();
+      this.notify('playbackChange', false);
+      this.updateMediaSessionPlaybackState('paused');
+      this.updateMediaSessionPosition();
+      this.releaseWakeLock();
     }
   }
 
@@ -871,7 +938,11 @@ class AudioPlayer {
       this.notify('playbackChange', true);
       this.updateMediaSessionPlaybackState('playing');
       this.startYtProgressTracker();
+      this.requestWakeLock();
     } else if (this.audio.src) {
+      this.notify('playbackChange', true);
+      this.updateMediaSessionPlaybackState('playing');
+      this.requestWakeLock();
       this.audio.play().catch(() => {
         if (this.currentTrack?.videoId) {
           this.fallbackToYouTubeIframe();
@@ -1008,6 +1079,7 @@ class AudioPlayer {
     } else {
       this.audio.currentTime = seconds;
     }
+    this.updateMediaSessionPosition(seconds);
   }
 
   seekByPercent(percent) {
@@ -1163,6 +1235,7 @@ class AudioPlayer {
         this.ytPlayer.setPlaybackRate(rate);
       } catch (e) {}
     }
+    this.updateMediaSessionPosition();
     this.notify('playbackRateChange', rate);
     return rate;
   }
