@@ -655,12 +655,13 @@ class MusicAPI {
           const data = await res.json();
           if (data && Array.isArray(data.tracks) && data.tracks.length > 0) {
             const relatedTracks = this.filterRelatedTracks(track, data.tracks, limit);
-            if (relatedTracks.length === 0) return { mood, vibe, tracks: [] };
-            return {
-              mood: data.mood || mood,
-              vibe,
-              tracks: relatedTracks
-            };
+            if (relatedTracks.length > 0) {
+              return {
+                mood: data.mood || mood,
+                vibe,
+                tracks: relatedTracks
+              };
+            }
           }
         }
       } catch (e) {
@@ -668,15 +669,38 @@ class MusicAPI {
       }
     }
 
-    // 2. Targeted YouTube-style radio searches, ordered from strongest to broadest.
-    const artistQuery = track.artist && track.artist !== 'YouTube Artist'
-      ? `${track.artist} ${mood} ${vibe.language} songs similar`
-      : '';
-    const genreQuery = `${vibe.genreTags.join(' ')} ${mood} ${vibe.language} songs similar`;
-    const titleQuery = track.title ? `${track.title} radio` : '';
-    const queries = [artistQuery, genreQuery, titleQuery].filter(Boolean);
-    const batches = await Promise.all(queries.map(query => this.searchSongs(query, limit)));
-    const filtered = this.filterRelatedTracks(track, batches.flat(), limit);
+    // 2. Artist-first fallback keeps regional and Bhojpuri artists discoverable
+    // even when static language or genre tags are missing.
+    const artist = String(track.artist || '').trim();
+    const title = String(track.title || '').trim();
+    const queries = artist && artist !== 'YouTube Artist'
+      ? [`${artist} top hit songs`, `${artist} official audio`]
+      : [title ? `${title} radio` : `${mood} songs`];
+    const batches = await Promise.all(queries.map(query => this.searchSongs(query, 10)));
+    const seedArtists = artist.toLowerCase().split(/,|&| feat\.? | ft\.? /).map(name => name.trim()).filter(Boolean);
+    const regionalArtists = [
+      'pawan singh', 'khesari lal yadav', 'shilpi raj', 'neelkamal singh', 'ritesh pandey',
+      'ankush raja', 'priyanka singh', 'antra singh priyanka', 'kalpana patowary',
+      'arijit singh', 'atif aslam', 'diljit dosanjh', 'karan aujla', 'ap dhillon', 'sidhu moose wala'
+    ];
+    const seedIsRegional = regionalArtists.some(name => artist.toLowerCase().includes(name)) ||
+      /\b(bhojpuri|hindi|bollywood|punjabi|desi|bhangra)\b/i.test(`${title} ${artist}`);
+    const foreignMarkers = /\b(english|k-pop|kpop|korean|spanish|french|tamil|telugu|malayalam|hollywood|edm|billboard|taylor swift|ed sheeran|justin bieber)\b/i;
+    const seen = new Set([track.id, track.videoId].filter(Boolean));
+    const candidates = batches.flat().filter(candidate => {
+      const key = candidate?.videoId || candidate?.id;
+      if (!candidate || !key || seen.has(key)) return false;
+      const candidateArtist = String(candidate.artist || '').toLowerCase();
+      const candidateText = `${candidate.title || ''} ${candidate.artist || ''} ${candidate.album || ''}`;
+      if (seedIsRegional && foreignMarkers.test(candidateText)) return false;
+      const sameArtist = seedArtists.some(name => candidateArtist.includes(name) || name.includes(candidateArtist));
+      const regionalPeer = regionalArtists.some(name => candidateArtist.includes(name));
+      candidate._artistMatch = sameArtist ? 2 : regionalPeer ? 1 : 0;
+      seen.add(key);
+      return true;
+    }).sort((left, right) => right._artistMatch - left._artistMatch);
+    candidates.forEach(candidate => delete candidate._artistMatch);
+    const filtered = candidates.slice(0, 10);
 
     return {
       mood: mood,
