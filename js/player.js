@@ -652,6 +652,15 @@ class AudioPlayer {
 
     StorageManager.addRecentTrack(this.currentTrack);
 
+    const isLocalDevelopment = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
+    if (this.currentTrack.videoId && !isLocalDevelopment) {
+      this.audio.pause();
+      this.audio.removeAttribute('src');
+      this.audio.load();
+      this.setupYouTubePlayer(this.currentTrack.videoId);
+      return;
+    }
+
     const playPromise = this.audio.play();
     if (playPromise !== undefined) {
       playPromise.catch(err => {

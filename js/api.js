@@ -95,6 +95,9 @@ class MusicAPI {
             return items;
           }
         }
+        if (res.status >= 500) {
+          console.warn(`[Music] Live search service returned HTTP ${res.status}`);
+        }
       } catch (e) {
         console.warn('Live backend query timed out, falling back to public mirrors...');
       }

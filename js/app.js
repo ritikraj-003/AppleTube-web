@@ -2314,8 +2314,13 @@ class App {
       </div>
     `;
 
-    const results = await api.searchSongs(query, 30);
-    this.renderSearchResults(query, results);
+    try {
+      const results = await api.searchSongs(query, 30);
+      this.renderSearchResults(query, results);
+    } catch (error) {
+      console.error('[Music] Search request failed:', error);
+      this.renderSearchResults(query, [], 'Music service temporarily unavailable. Please try again.');
+    }
   }
 
   async renderSearchView() {
@@ -2561,7 +2566,7 @@ class App {
     });
   }
 
-  renderSearchResults(query, tracks) {
+  renderSearchResults(query, tracks, errorMessage = '') {
     this.searchViewMode = this.searchViewMode || 'list'; // 'list' | 'grid'
 
     this.dom.contentArea.innerHTML = `
@@ -2600,8 +2605,8 @@ class App {
             <circle cx="11" cy="11" r="8"></circle>
             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
           </svg>
-          <div style="font-size: 1.1rem; font-weight: 600;">No online songs found for "${UIManager.escapeHtml(query)}"</div>
-          <div style="font-size: 0.9rem; margin-top: 6px;">Try searching for popular artists or songs</div>
+          <div style="font-size: 1.1rem; font-weight: 600;">${errorMessage || `No online songs found for "${UIManager.escapeHtml(query)}"`}</div>
+          <div style="font-size: 0.9rem; margin-top: 6px;">${errorMessage ? 'Please try again in a moment.' : 'Try searching for popular artists or songs'}</div>
         </div>
       ` : `
         <div id="searchResultsContainer"></div>
