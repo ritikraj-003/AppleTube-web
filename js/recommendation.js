@@ -68,6 +68,9 @@ export class RecommendationEngine {
         }
       }
 
+      // Discovery results are filtered again because they bypass getRelatedTracks().
+      candidates = api.filterRelatedTracks(seedTrack, candidates, Math.max(limit, 20));
+
       // Deduplicate candidates by videoId or id
       const uniqueCandidates = [];
       const seen = new Set();

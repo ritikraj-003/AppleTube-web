@@ -1093,6 +1093,8 @@ class AudioPlayer {
   // --- Mood-Based Next Music Suggestions & Smart Autoplay ---
   async fetchMoodSuggestions(track, overrideMood = null) {
     if (!track) return;
+    const requestId = (this.suggestionRequestId || 0) + 1;
+    this.suggestionRequestId = requestId;
     const targetMood = overrideMood || this.currentMood;
     this.isFetchingSuggestions = true;
     this.notify('suggestionsUpdate', { mood: targetMood, tracks: this.suggestedTracks, loading: true });
@@ -1101,21 +1103,27 @@ class AudioPlayer {
       const existingIds = new Set(this.queue.flatMap(item => [item.id, item.videoId].filter(Boolean)));
       existingIds.add(track.id);
       if (track.videoId) existingIds.add(track.videoId);
-      const remoteTracks = Array.isArray(res?.tracks)
-        ? res.tracks.filter(t => !existingIds.has(t.id) && !existingIds.has(t.videoId))
-        : [];
+      const rankedTracks = await recommendationEngine.generateQueue(track, {
+        limit: 15,
+        existingQueueIds: [...existingIds]
+      });
+      if (requestId !== this.suggestionRequestId || this.currentTrack?.id !== track.id) return;
+      const remoteTracks = (rankedTracks.length > 0 ? rankedTracks : (res?.tracks || []))
+        .filter(t => !existingIds.has(t.id) && !existingIds.has(t.videoId));
       const fallbackTracks = this.getLocalSuggestionFallback(track, targetMood, existingIds);
       const seenIds = new Set();
       this.suggestedTracks = [...remoteTracks, ...fallbackTracks]
         .filter(candidate => {
-          if (seenIds.has(candidate.id) || candidate.id === track.id) return false;
-          seenIds.add(candidate.id);
+          const key = candidate.videoId || candidate.id;
+          if (!key || seenIds.has(key) || candidate.id === track.id || candidate.videoId === track.videoId) return false;
+          seenIds.add(key);
           return true;
         })
         .slice(0, 10);
       this.notify('suggestionsUpdate', { mood: targetMood, tracks: this.suggestedTracks });
     } catch (err) {
       console.warn('Failed to fetch mood suggestions:', err);
+      if (requestId !== this.suggestionRequestId || this.currentTrack?.id !== track.id) return;
       this.suggestedTracks = this.getLocalSuggestionFallback(track, targetMood);
       this.notify('suggestionsUpdate', { mood: targetMood, tracks: this.suggestedTracks });
     } finally {
@@ -1127,6 +1135,8 @@ class AudioPlayer {
     const excluded = excludedIds || new Set(this.queue.flatMap(item => [item.id, item.videoId].filter(Boolean)));
     excluded.add(track.id);
     if (track.videoId) excluded.add(track.videoId);
+    const seedLanguage = api.extractVibe(track).language;
+    if (!['hindi', 'punjabi'].includes(seedLanguage)) return [];
     const libraryTracks = [
       ...StorageManager.getLikedSongs(),
       ...StorageManager.getPlaylists().flatMap(playlist => playlist.tracks || []),
@@ -1137,7 +1147,8 @@ class AudioPlayer {
     return candidates
       .filter(candidate => {
         const key = candidate?.videoId || candidate?.id;
-        return candidate && key && !excluded.has(candidate.id) && !excluded.has(candidate.videoId);
+        return candidate && key && api.extractVibe(candidate).language === seedLanguage &&
+          !excluded.has(candidate.id) && !excluded.has(candidate.videoId);
       })
       .sort((a, b) => {
         const aScore = (a.mood === targetMood ? 2 : 0) + (a.artist === track.artist ? 1 : 0);

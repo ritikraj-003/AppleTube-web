@@ -580,7 +580,7 @@ class MusicAPI {
     if (/[\u0900-\u097F]/.test(text)) return 'hindi';
     if (/[\u0A00-\u0A7F]/.test(text)) return 'punjabi';
     if (/\b(punjabi|dhillon|sidhu|diljit|karan aujla|shubh|jassi|yaar|gabru|patiala|munda|kudi|bhangra|jatt)\b/i.test(text)) return 'punjabi';
-    if (/\b(arijit|pritam|shreya|neha kakkar|kumar sanu|alka|sonu nigam|jubin|badshah|t-series|bollywood|kesariya|tum|dil|pyar|ishq|tera|teri|meri|hum|saath|raat|zindagi|aashiqui|channa|deewani|geet|dard|sanam)\b/i.test(text)) return 'hindi';
+    if (/\b(arijit|pritam|shreya|neha kakkar|kumar sanu|alka|alka yagnik|sonu nigam|jubin|badshah|atif aslam|mohit chauhan|jasleen royal|amit trivedi|shankar mahadevan|tulsi kumar|asees kaur|varun jain|anuv jain|a\.r\. rahman|ar rahman|t-series|bollywood|kesariya|tum|dil|pyar|ishq|tera|teri|meri|hum|saath|raat|zindagi|aashiqui|channa|deewani|geet|dard|sanam)\b/i.test(text)) return 'hindi';
     return 'english';
   }
 
@@ -615,15 +615,14 @@ class MusicAPI {
 
   filterRelatedTracks(seedTrack, candidates, limit) {
     const seedVibe = seedTrack.vibeMetadata || this.extractVibe(seedTrack);
+    if (!['hindi', 'punjabi'].includes(seedVibe.language)) return [];
     const seedKey = seedTrack.videoId || seedTrack.id;
     const seen = new Set([seedKey]);
     return (Array.isArray(candidates) ? candidates : []).filter(candidate => {
       const key = candidate?.videoId || candidate?.id;
       if (!key || seen.has(key)) return false;
       const candidateVibe = this.extractVibe(candidate);
-      const sameLanguage = candidateVibe.language === seedVibe.language ||
-        (['hindi', 'punjabi'].includes(candidateVibe.language) && ['hindi', 'punjabi'].includes(seedVibe.language));
-      if (!sameLanguage) return false;
+      if (candidateVibe.language !== seedVibe.language) return false;
       candidate.mood = candidateVibe.mood;
       candidate.vibeMetadata = candidateVibe;
       seen.add(key);
