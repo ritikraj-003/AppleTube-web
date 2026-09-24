@@ -1612,24 +1612,30 @@
 /* Queue Drawer */
 .queue-drawer {
   position: fixed;
-  top: 0;
-  right: -390px;
-  width: 360px;
+  left: 50%;
+  bottom: 24px;
+  width: min(360px, calc(100vw - 24px));
   max-width: 90vw;
-  height: 100vh;
-  background: var(--bg-surface);
-  border-left: 1px solid var(--border-subtle);
-  box-shadow: var(--shadow-lg);
-  padding: 24px 20px;
+  height: min(68vh, 560px);
+  background: rgba(24, 24, 28, 0.58);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px 24px 18px 18px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(32px) saturate(140%);
+  -webkit-backdrop-filter: blur(32px) saturate(140%);
+  padding: 20px 16px 16px;
   display: flex;
   flex-direction: column;
   gap: 16px;
   z-index: 2600;
-  transition: right var(--transition-slow);
+  transform: translate(-50%, calc(100% + 26px));
+  opacity: 0;
+  transition: transform 0.38s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.25s ease;
 }
 
 .queue-drawer.open {
-  right: 0;
+  transform: translate(-50%, 0);
+  opacity: 1;
 }
 
 .queue-section-divider {
@@ -2158,6 +2164,14 @@
   gap: 12px;
 }
 
+
+.options-modal-box {
+  background: rgba(24, 24, 28, 0.62);
+  border-color: rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(32px) saturate(150%);
+  -webkit-backdrop-filter: blur(32px) saturate(150%);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.58), 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
 /* ==================== APPLE TUBE AUTH MODAL ==================== */
 .auth-modal-box {
   max-width: 420px;
@@ -2607,6 +2621,28 @@ body:has(.fullscreen-overlay.open) .toast-container,
 
   .btn-connect-phone span, .user-profile-chip span {
     display: none;
+  }
+
+  /* Full-screen Up Next sheet for mobile browsers */
+  .queue-drawer {
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    border-radius: 24px 24px 0 0;
+    padding: max(20px, env(safe-area-inset-top, 0px)) 16px calc(16px + env(safe-area-inset-bottom, 0px));
+    transform: translateY(100%);
+  }
+
+  .queue-drawer.open {
+    transform: translateY(0);
+  }
+
+  .queue-list {
+    min-height: 0;
+    overscroll-behavior: contain;
   }
 }
 

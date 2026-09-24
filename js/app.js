@@ -1183,6 +1183,34 @@ class App {
       });
     }
 
+    // Swipe up in the fullscreen player to reveal the glass Up Next sheet.
+    if (this.dom.fullscreenOverlay) {
+      let swipeStartY = 0;
+      let swipeStartX = 0;
+      let swipeTracking = false;
+
+      this.dom.fullscreenOverlay.addEventListener('touchstart', (event) => {
+        if (event.touches.length !== 1 || event.target.closest('button, input, .fullscreen-progress-row')) {
+          swipeTracking = false;
+          return;
+        }
+        swipeStartY = event.touches[0].clientY;
+        swipeStartX = event.touches[0].clientX;
+        swipeTracking = true;
+      }, { passive: true });
+
+      this.dom.fullscreenOverlay.addEventListener('touchend', (event) => {
+        if (!swipeTracking || event.changedTouches.length !== 1) return;
+        swipeTracking = false;
+        const endTouch = event.changedTouches[0];
+        const verticalDistance = swipeStartY - endTouch.clientY;
+        const horizontalDistance = Math.abs(swipeStartX - endTouch.clientX);
+        if (verticalDistance > 70 && verticalDistance > horizontalDistance * 1.2) {
+          this.dom.queueDrawer.classList.add('open');
+        }
+      }, { passive: true });
+    }
+
     if (this.dom.btnFullscreenDownload) {
       this.dom.btnFullscreenDownload.addEventListener('click', () => {
         this.downloadTrack(player.currentTrack);
