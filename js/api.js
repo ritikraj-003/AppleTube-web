@@ -3,6 +3,7 @@
  */
 
 import { CONFIG } from './config.js';
+import { OVERALL_TRAVEL_SONGS } from './travelData.js';
 
 class MusicAPI {
   constructor() {
@@ -340,6 +341,46 @@ class MusicAPI {
 
   // --- Trending Tracks (Live YouTube First) ---
   async getTrendingTracks() {
+    const localizedTracks = await this.getLocalizedHomeTracks();
+    if (localizedTracks.length > 0) return localizedTracks;
+    return OVERALL_TRAVEL_SONGS.slice(0, 15);
+  }
+
+  isHindiPunjabiTrack(track) {
+    const text = `${track?.title || ''} ${track?.artist || ''} ${track?.album || ''}`.toLowerCase();
+    const artists = [
+      'arijit', 'diljit', 'karan aujla', 'ap dhillon', 'sidhu moose', 'pritam',
+      'shreya ghoshal', 'atif aslam', 'ar rahman', 'a.r. rahman', 'mohit chauhan',
+      'lucky ali', 'shankar mahadevan', 'sunidhi chauhan', 'badshah', 'guru randhawa',
+      'neha kakkar', 'jass manak', 'ammy virk', 'gippy grewal', 'harrdy sandhu',
+      'vishal mishra', 'anuv jain', 'amit trivedi', 'sonu nigam', 'monali thakur'
+    ];
+    const languageMarkers = [
+      'hindi', 'punjabi', 'bollywood', 'desi', 'bhangra', 'indian music', 't-series',
+      'saregama', 'zee music', 'speed records', 'punjabi hits', 'hindi hits'
+    ];
+    return artists.some(artist => text.includes(artist)) ||
+      languageMarkers.some(marker => text.includes(marker));
+  }
+
+  async getLocalizedHomeTracks() {
+    const queries = [
+      'trending Hindi Bollywood songs latest hits Arijit Singh Shreya Ghoshal',
+      'trending Punjabi songs latest hits Diljit Dosanjh Karan Aujla AP Dhillon'
+    ];
+    const results = await Promise.all(queries.map(query => this.searchSongs(query, 20)));
+    const seen = new Set();
+    return results.flat()
+      .filter(track => {
+        const id = track?.videoId || track?.id;
+        if (!track || !id || seen.has(id) || !this.isHindiPunjabiTrack(track)) return false;
+        seen.add(id);
+        return true;
+      })
+      .slice(0, 30);
+  }
+
+  async getGenericTrendingTracks() {
     try {
       const ytTrending = await this.getYouTubeTrending();
       if (ytTrending && ytTrending.length > 0) {
@@ -373,7 +414,7 @@ class MusicAPI {
       }
     } catch (e) {}
 
-    return CONFIG.CURATED_TRACKS;
+    return OVERALL_TRAVEL_SONGS.slice(0, 15);
   }
 
   // --- Genre / Category Tracks ---

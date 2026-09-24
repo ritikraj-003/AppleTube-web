@@ -3483,12 +3483,12 @@ class App {
     const requestId = (this.travelRequestId || 0) + 1;
     this.travelRequestId = requestId;
     const queryByCategory = {
-      road_trip: 'best road trip songs travel anthems high energy',
-      mountain_journey: 'mountain journey songs scenic travel anthems',
-      chill_travel: 'chill travel songs road trip relaxing playlist',
-      night_drive: 'night drive songs atmospheric synthwave travel playlist',
-      long_drive: 'long drive songs highway travel playlist',
-      solo_travel: 'solo travel songs wanderlust road trip playlist'
+      road_trip: 'Hindi Punjabi road trip songs travel anthems high energy',
+      mountain_journey: 'Hindi Punjabi mountain journey songs scenic travel anthems',
+      chill_travel: 'Hindi Punjabi chill travel songs relaxing Indie Desi playlist',
+      night_drive: 'Hindi Punjabi night drive songs atmospheric travel playlist',
+      long_drive: 'Hindi Punjabi long drive songs highway travel playlist',
+      solo_travel: 'Hindi Punjabi solo travel songs wanderlust road trip playlist'
     };
 
     try {
