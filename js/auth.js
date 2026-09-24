@@ -4,16 +4,39 @@
 
 import { StorageManager } from './storage.js';
 
+const SESSION_KEYS = {
+  token: ['appletube_token', 'aura_auth_token'],
+  user: ['appletube_user', 'aura_auth_user']
+};
+
 class AuthManager {
   constructor() {
-    this.token = localStorage.getItem('aura_auth_token') || null;
+    this.token = this.readSessionValue(SESSION_KEYS.token);
     this.user = null;
     try {
-      const storedUser = localStorage.getItem('aura_auth_user');
+      const storedUser = this.readSessionValue(SESSION_KEYS.user);
       this.user = storedUser ? JSON.parse(storedUser) : null;
     } catch (e) {
       this.user = null;
     }
+  }
+
+  readSessionValue(keys) {
+    for (const key of keys) {
+      const value = localStorage.getItem(key);
+      if (value) return value;
+    }
+    return null;
+  }
+
+  persistSession() {
+    if (!this.token || !this.user) return;
+    const userJson = JSON.stringify(this.user);
+    localStorage.setItem('appletube_token', this.token);
+    localStorage.setItem('appletube_user', userJson);
+    // Keep existing installations signed in while they migrate to the new keys.
+    localStorage.setItem('aura_auth_token', this.token);
+    localStorage.setItem('aura_auth_user', userJson);
   }
 
   isLoggedIn() {
@@ -25,10 +48,13 @@ class AuthManager {
   }
 
   async init(onStateChange) {
-    if (!this.token) {
+    if (!this.token || !this.user) {
       if (onStateChange) onStateChange(null);
       return;
     }
+
+    // Restore the cached session before any network request can delay the UI.
+    if (onStateChange) onStateChange(this.user);
 
     try {
       const res = await fetch('/api/auth/me', {
@@ -38,21 +64,20 @@ class AuthManager {
       if (res.ok) {
         const data = await res.json();
         this.user = data.user;
-        localStorage.setItem('aura_auth_user', JSON.stringify(this.user));
+        this.persistSession();
         
         // Populate local storage with the cloud collection
         if (data.collection) {
           this.applyCloudCollection(data.collection);
         }
         if (onStateChange) onStateChange(this.user);
-      } else {
-        // Token expired or invalid
+      } else if (res.status === 401 || res.status === 403) {
+        // Only an explicit authorization failure invalidates the cached session.
         this.logout();
         if (onStateChange) onStateChange(null);
       }
     } catch (e) {
-      // Offline fallback: keep local cached user
-      if (onStateChange) onStateChange(this.user);
+      // Offline fallback: keep the restored local session.
     }
   }
 
@@ -70,8 +95,7 @@ class AuthManager {
 
     this.token = data.token;
     this.user = data.user;
-    localStorage.setItem('aura_auth_token', this.token);
-    localStorage.setItem('aura_auth_user', JSON.stringify(this.user));
+    this.persistSession();
 
     if (data.collection) {
       this.applyCloudCollection(data.collection);
@@ -94,8 +118,7 @@ class AuthManager {
 
     this.token = data.token;
     this.user = data.user;
-    localStorage.setItem('aura_auth_token', this.token);
-    localStorage.setItem('aura_auth_user', JSON.stringify(this.user));
+    this.persistSession();
 
     if (data.collection) {
       this.applyCloudCollection(data.collection);
@@ -118,8 +141,7 @@ class AuthManager {
 
     this.token = data.token;
     this.user = data.user;
-    localStorage.setItem('aura_auth_token', this.token);
-    localStorage.setItem('aura_auth_user', JSON.stringify(this.user));
+    this.persistSession();
 
     if (data.collection) {
       this.applyCloudCollection(data.collection);
@@ -138,6 +160,8 @@ class AuthManager {
 
     this.token = null;
     this.user = null;
+    localStorage.removeItem('appletube_token');
+    localStorage.removeItem('appletube_user');
     localStorage.removeItem('aura_auth_token');
     localStorage.removeItem('aura_auth_user');
   }
