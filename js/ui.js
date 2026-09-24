@@ -690,7 +690,7 @@ export class UIManager {
     badgeEl.title = `Current Vibe: ${meta.label} (Click to switch mood)`;
   }
 
-  static renderQueueSuggestions(container, suggestions, currentMood, onPlay, onAdd) {
+  static renderQueueSuggestions(container, suggestions, currentMood, onPlay, onAdd, loading = false) {
     if (!container) return;
     container.innerHTML = '';
 
@@ -704,6 +704,14 @@ export class UIManager {
       <span class="suggestions-hint">Smart Autoplay: Matching Tracks</span>
     `;
     container.appendChild(header);
+
+    if (loading) {
+      const loadingState = document.createElement('div');
+      loadingState.className = 'suggestions-empty suggestions-loading';
+      loadingState.innerHTML = '<span class="spinner"></span><span>Finding your next tracks...</span>';
+      container.appendChild(loadingState);
+      return;
+    }
 
     if (!suggestions || suggestions.length === 0) {
       const empty = document.createElement('div');

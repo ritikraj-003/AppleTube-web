@@ -1721,13 +1721,17 @@ class App {
       UIManager.updateMoodBadge(this.dom.playerMoodBadge, mood);
     });
 
-    player.on('suggestionsUpdate', ({ mood, tracks }) => {
+    player.on('suggestionsUpdate', ({ mood, tracks, loading }) => {
       UIManager.renderQueueSuggestions(
         this.dom.queueSuggestionsContainer,
         tracks,
         mood,
-        (track) => player.playTrack(track),
-        (track) => player.addToQueue(track)
+        (track) => {
+          player.playNext(track);
+          player.next();
+        },
+        (track) => player.playNext(track),
+        loading
       );
     });
   }
@@ -2995,7 +2999,7 @@ class App {
         if (player.currentTrack && liked.some(t => t.id === player.currentTrack.id)) {
           player.togglePlay();
         } else {
-          player.playTrack(liked[0], liked);
+          player.playTrack(liked[0], liked, { type: 'favorites' });
         }
       }
     });
@@ -3007,7 +3011,7 @@ class App {
           track,
           idx,
           player.currentTrack?.id,
-          (t) => (player.currentTrack?.id === t.id ? player.togglePlay() : player.playTrack(t, liked)),
+          (t) => (player.currentTrack?.id === t.id ? player.togglePlay() : player.playTrack(t, liked, { type: 'favorites' })),
           (t, isLiked) => {
             auth.syncCollectionToServer();
             if (!isLiked) this.renderLikedView();
@@ -3212,7 +3216,7 @@ class App {
         if (player.currentTrack && tracks.some(t => t.id === player.currentTrack.id)) {
           player.togglePlay();
         } else {
-          player.playTrack(tracks[0], tracks);
+          player.playTrack(tracks[0], tracks, { type: 'playlist', id: playlist.id });
         }
       }
     });
@@ -3234,7 +3238,7 @@ class App {
           track,
           idx,
           player.currentTrack?.id,
-          (t) => (player.currentTrack?.id === t.id ? player.togglePlay() : player.playTrack(t, tracks)),
+          (t) => (player.currentTrack?.id === t.id ? player.togglePlay() : player.playTrack(t, tracks, { type: 'playlist', id: playlist.id })),
           (t, isLiked) => {
             auth.syncCollectionToServer();
           },
@@ -3450,12 +3454,62 @@ class App {
         recent: StorageManager.getRecentTracks()
       });
     } else if (activeCat && CATEGORY_SONGS[activeCat]) {
-      tracksToRender = CATEGORY_SONGS[activeCat];
+      tracksToRender = this.getTravelCategoryFallback(activeCat);
     } else {
       tracksToRender = OVERALL_TRAVEL_SONGS;
     }
 
     this.renderGridItems(travelGrid, tracksToRender);
+
+    if (activeCat && !isSuggest) {
+      this.loadTravelCategoryTracks(activeCat, travelGrid, tracksToRender);
+    }
+  }
+
+  getTravelCategoryFallback(categoryId) {
+    const categoryTracks = CATEGORY_SONGS[categoryId] || [];
+    const allCategoryTracks = Object.values(CATEGORY_SONGS).flat();
+    const seen = new Set();
+    return [...categoryTracks, ...OVERALL_TRAVEL_SONGS, ...allCategoryTracks]
+      .filter(track => {
+        if (!track || seen.has(track.id)) return false;
+        seen.add(track.id);
+        return true;
+      })
+      .slice(0, 15);
+  }
+
+  async loadTravelCategoryTracks(categoryId, container, fallbackTracks) {
+    const requestId = (this.travelRequestId || 0) + 1;
+    this.travelRequestId = requestId;
+    const queryByCategory = {
+      road_trip: 'best road trip songs travel anthems high energy',
+      mountain_journey: 'mountain journey songs scenic travel anthems',
+      chill_travel: 'chill travel songs road trip relaxing playlist',
+      night_drive: 'night drive songs atmospheric synthwave travel playlist',
+      long_drive: 'long drive songs highway travel playlist',
+      solo_travel: 'solo travel songs wanderlust road trip playlist'
+    };
+
+    try {
+      const remoteTracks = await api.searchSongs(queryByCategory[categoryId], 20);
+      if (requestId !== this.travelRequestId || this.activeTravelCategory !== categoryId || this.isTravelSuggestActive) {
+        return;
+      }
+      const seen = new Set();
+      const mergedTracks = [...(Array.isArray(remoteTracks) ? remoteTracks : []), ...fallbackTracks]
+        .filter(track => {
+          const id = track?.videoId || track?.id;
+          if (!track || !id || seen.has(id)) return false;
+          seen.add(id);
+          return true;
+        })
+        .slice(0, 15);
+      this.renderGridItems(container, mergedTracks);
+    } catch (error) {
+      console.warn('[Traveling Vibes] Category search failed:', error);
+      if (requestId === this.travelRequestId) this.renderGridItems(container, fallbackTracks);
+    }
   }
 }
 

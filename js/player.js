@@ -6,6 +6,7 @@ import { CONFIG } from './config.js';
 import { StorageManager } from './storage.js';
 import { api } from './api.js';
 import { recommendationEngine } from './recommendation.js';
+import { OVERALL_TRAVEL_SONGS } from './travelData.js';
 
 class AudioPlayer {
   constructor() {
@@ -24,6 +25,7 @@ class AudioPlayer {
     this.userQueue = [];
     this.recommendationQueue = [];
     this.seedTrack = null;
+    this.playbackContext = { type: 'browse' };
     this.currentPlayStartTime = 0;
     this.hasRecordedCompletion = false;
     this.isGeneratingRecommendations = false;
@@ -35,7 +37,7 @@ class AudioPlayer {
     this.isMuted = settings.muted ?? false;
     this.isShuffle = settings.shuffle ?? false;
     this.repeatMode = settings.repeatMode ?? 'off'; // 'off' | 'all' | 'one'
-    this.smartMoodAutoplay = settings.smartMoodAutoplay !== false; // default true (matches sad to sad, happy to happy)
+    this.smartMoodAutoplay = settings.smartMoodAutoplay === true;
     this.currentMood = 'chill';
     this.suggestedTracks = [];
     this.isFetchingSuggestions = false;
@@ -382,12 +384,14 @@ class AudioPlayer {
       return;
     }
 
-    if (this.hasNext()) {
+    const canAutoAdvance = this.isContinuousPlaybackAllowed();
+
+    if (this.hasNext() && canAutoAdvance) {
       this.next(true);
     } else if (this.repeatMode === 'all') {
       this.currentIndex = 0;
       this.loadAndPlayCurrent();
-    } else if (this.recommendationQueue.length > 0) {
+    } else if (canAutoAdvance && this.recommendationQueue.length > 0) {
       const nextTrack = this.recommendationQueue.shift();
       this.queue.push(nextTrack);
       this.currentIndex = this.queue.length - 1;
@@ -400,7 +404,7 @@ class AudioPlayer {
       });
       this.loadAndPlayCurrent();
       this.checkAndReplenishRecommendations();
-    } else if (this.smartMoodAutoplay && this.suggestedTracks.length > 0) {
+    } else if (canAutoAdvance && this.suggestedTracks.length > 0) {
       this.playNextSuggestedMoodTrack();
     } else {
       this.notify('playbackChange', false);
@@ -479,11 +483,16 @@ class AudioPlayer {
   }
 
   // --- Core Playback Controls ---
-  playTrack(track, queue = null) {
+  isContinuousPlaybackAllowed() {
+    return this.smartMoodAutoplay || ['favorites', 'playlist'].includes(this.playbackContext.type);
+  }
+
+  playTrack(track, queue = null, context = { type: 'browse' }) {
     if (!track) return;
     this.streamRetryCount = 0;
 
     if (queue && Array.isArray(queue) && queue.length > 0) {
+      this.playbackContext = context;
       this.seedTrack = track;
       this.userQueue = [];
       this.recommendationQueue = [];
@@ -509,6 +518,7 @@ class AudioPlayer {
 
   async playWithSeed(track, context = 'search') {
     if (!track) return;
+    this.playbackContext = { type: typeof context === 'string' ? 'browse' : context.type };
     this.seedTrack = track;
     this.userQueue = [];
     this.recommendationQueue = [];
@@ -775,7 +785,7 @@ class AudioPlayer {
     } else if (this.repeatMode === 'all') {
       this.currentIndex = 0;
       this.loadAndPlayCurrent();
-    } else if (this.recommendationQueue.length > 0) {
+    } else if (this.isContinuousPlaybackAllowed() && this.recommendationQueue.length > 0) {
       const nextTrack = this.recommendationQueue.shift();
       this.queue.push(nextTrack);
       this.currentIndex = this.queue.length - 1;
@@ -788,9 +798,9 @@ class AudioPlayer {
       });
       this.loadAndPlayCurrent();
       this.checkAndReplenishRecommendations();
-    } else if (this.smartMoodAutoplay && this.suggestedTracks.length > 0) {
+    } else if (this.isContinuousPlaybackAllowed() && this.suggestedTracks.length > 0) {
       this.playNextSuggestedMoodTrack();
-    } else if (!autoTrigger) {
+    } else if (!autoTrigger && this.playbackContext.type !== 'browse') {
       this.currentIndex = 0;
       this.loadAndPlayCurrent();
     }
@@ -1084,6 +1094,7 @@ class AudioPlayer {
     if (!track) return;
     const targetMood = overrideMood || this.currentMood;
     this.isFetchingSuggestions = true;
+    this.notify('suggestionsUpdate', { mood: targetMood, tracks: this.suggestedTracks, loading: true });
     try {
       const res = await api.getRelatedTracks(track, targetMood, 15);
       const existingIds = new Set(this.queue.map(t => t.id));
@@ -1091,15 +1102,7 @@ class AudioPlayer {
       const remoteTracks = Array.isArray(res?.tracks)
         ? res.tracks.filter(t => !existingIds.has(t.id))
         : [];
-      const fallbackTracks = [...this.queue, ...CONFIG.CURATED_TRACKS]
-        .filter(candidate => candidate && !existingIds.has(candidate.id))
-        .map(candidate => ({
-          track: candidate,
-          score: (candidate.mood === targetMood ? 2 : 0) +
-            (candidate.artist === track.artist ? 1 : 0)
-        }))
-        .sort((a, b) => b.score - a.score)
-        .map(({ track: candidate }) => candidate);
+      const fallbackTracks = this.getLocalSuggestionFallback(track, targetMood, existingIds);
       const seenIds = new Set();
       this.suggestedTracks = [...remoteTracks, ...fallbackTracks]
         .filter(candidate => {
@@ -1111,9 +1114,36 @@ class AudioPlayer {
       this.notify('suggestionsUpdate', { mood: targetMood, tracks: this.suggestedTracks });
     } catch (err) {
       console.warn('Failed to fetch mood suggestions:', err);
+      this.suggestedTracks = this.getLocalSuggestionFallback(track, targetMood);
+      this.notify('suggestionsUpdate', { mood: targetMood, tracks: this.suggestedTracks });
     } finally {
       this.isFetchingSuggestions = false;
     }
+  }
+
+  getLocalSuggestionFallback(track, targetMood, excludedIds = null) {
+    const excluded = excludedIds || new Set(this.queue.map(item => item.id));
+    excluded.add(track.id);
+    const libraryTracks = [
+      ...StorageManager.getLikedSongs(),
+      ...StorageManager.getPlaylists().flatMap(playlist => playlist.tracks || []),
+      ...StorageManager.getRecentTracks()
+    ];
+    const candidates = [...this.queue, ...libraryTracks, ...CONFIG.CURATED_TRACKS, ...OVERALL_TRAVEL_SONGS];
+    const seenIds = new Set();
+    return candidates
+      .filter(candidate => candidate && !excluded.has(candidate.id))
+      .sort((a, b) => {
+        const aScore = (a.mood === targetMood ? 2 : 0) + (a.artist === track.artist ? 1 : 0);
+        const bScore = (b.mood === targetMood ? 2 : 0) + (b.artist === track.artist ? 1 : 0);
+        return bScore - aScore;
+      })
+      .filter(candidate => {
+        if (seenIds.has(candidate.id)) return false;
+        seenIds.add(candidate.id);
+        return true;
+      })
+      .slice(0, 10);
   }
 
   setMoodOverride(newMood) {
