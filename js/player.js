@@ -69,9 +69,11 @@ class AudioPlayer {
       moodChange: [],
       playbackRateChange: [],
       suggestionsUpdate: [],
-      recommendationsUpdate: []
+      recommendationsUpdate: [],
+      audioOutputChange: []
     };
     this.playbackRate = 1.0;
+    this.currentSinkId = 'default';
 
     this.bindAudioEvents();
     this.initMediaSession();
@@ -1434,6 +1436,48 @@ class AudioPlayer {
         this.notify('playbackChange', false);
       }
     }
+  }
+
+  // --- Audio Output Routing & Device Management ---
+  async getAudioOutputDevices() {
+    if (typeof navigator !== 'undefined' && navigator.mediaDevices && typeof navigator.mediaDevices.enumerateDevices === 'function') {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        return devices.filter(d => d.kind === 'audiooutput');
+      } catch (err) {
+        console.warn('MediaDevices enumerateDevices error:', err);
+        return [];
+      }
+    }
+    return [];
+  }
+
+  isSetSinkIdSupported() {
+    return !!(this.audio && typeof this.audio.setSinkId === 'function');
+  }
+
+  async setAudioOutputDevice(deviceId) {
+    if (!this.isSetSinkIdSupported()) {
+      return { success: false, reason: 'unsupported' };
+    }
+    try {
+      const targetSinkId = deviceId === 'default' ? '' : deviceId;
+      await this.audio.setSinkId(targetSinkId);
+      this.currentSinkId = deviceId;
+      this.notify('audioOutputChange', { deviceId });
+      return { success: true, deviceId };
+    } catch (err) {
+      console.warn('Failed to switch audio output sink:', err);
+      return { success: false, error: err };
+    }
+  }
+
+  getCurrentSinkId() {
+    if (this.currentSinkId) return this.currentSinkId;
+    if (this.audio && typeof this.audio.sinkId === 'string') {
+      return this.audio.sinkId === '' ? 'default' : this.audio.sinkId;
+    }
+    return 'default';
   }
 
   // --- Observer ---

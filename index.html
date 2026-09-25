@@ -576,11 +576,11 @@
                   <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
                 </svg>
               </button>
-              <button class="fullscreen-airplay-btn" id="btnFullscreenAirplay" title="Connect to a device / AirPlay" aria-label="Audio output">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M12 16.5l4 4.5H8l4-4.5z" fill="currentColor"></path>
-                  <path d="M7.8 14.8a6 6 0 0 1 8.4 0"></path>
-                  <path d="M4.9 11.9a10 10 0 0 1 14.2 0"></path>
+              <button class="fullscreen-audio-output-btn fullscreen-airplay-btn" id="btnFullscreenAudioOutput" title="Connect to a device" aria-label="Audio output">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="audio-output-icon-svg">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                  <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
                 </svg>
               </button>
             </div>
@@ -598,6 +598,77 @@
           <div class="fullscreen-up-next-cue" id="btnFullscreenUpNext" role="button" tabindex="0" title="View Up Next & Recommendations">
             <div class="up-next-handle"></div>
             <span>Up Next</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== MOBILE GLASSMORPHIC AUDIO OUTPUT / DEVICE SELECTOR ==================== -->
+    <div class="audio-output-backdrop" id="audioOutputModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="audioOutputTitle">
+      <div class="audio-output-sheet" id="audioOutputSheet">
+        <!-- Top Sheet Handle Pill for Mobile Gesture Dismiss -->
+        <div class="audio-output-handle" id="audioOutputHandle"></div>
+        
+        <!-- Header -->
+        <div class="audio-output-header">
+          <div class="audio-output-header-left">
+            <div class="audio-output-pulse-dot" id="audioOutputPulseDot"></div>
+            <h3 class="audio-output-title" id="audioOutputTitle">Connect to a device</h3>
+          </div>
+          <button class="audio-output-close-btn" id="btnCloseAudioOutput" aria-label="Close device selector">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Scrollable Device Content Area -->
+        <div class="audio-output-body" id="audioOutputBody">
+          <!-- Active Current Output Section -->
+          <div class="audio-output-section-label">Current Audio Output</div>
+          <div class="audio-device-list" id="audioCurrentDeviceList">
+            <!-- Dynamically populated -->
+          </div>
+
+          <!-- Available Devices Section (populated when real devices detected) -->
+          <div class="audio-output-section-label" id="audioAvailableSectionLabel" style="display: none;">Available Outputs</div>
+          <div class="audio-device-list" id="audioAvailableDeviceList">
+            <!-- Dynamically populated real devices -->
+          </div>
+
+          <!-- Fallback / Android OS Routing Information Banner -->
+          <div class="audio-output-info-card" id="audioOutputInfoCard">
+            <div class="audio-output-info-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+              </svg>
+            </div>
+            <div class="audio-output-info-content">
+              <div class="audio-output-info-title">Audio routing is managed by your device</div>
+              <div class="audio-output-info-desc">
+                When Bluetooth headphones, earbuds, or speakers are connected to your Android device, audio routes to them automatically.
+              </div>
+            </div>
+          </div>
+          
+          <!-- Quick Bluetooth / Android System Guide Toggle Button -->
+          <button class="audio-output-guide-btn" id="btnAudioOutputGuide" type="button">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6.5 6.5 17.5 17.5 12 23 12 1 17.5 6.5 6.5 17.5"></polyline>
+            </svg>
+            <span>Bluetooth & Media Output Controls</span>
+          </button>
+          
+          <div class="audio-output-guide-card" id="audioOutputGuideCard" style="display: none;">
+            <p style="margin: 0 0 6px; font-weight: 600;">To switch audio route on Android:</p>
+            <ol style="margin: 0; padding-left: 20px;">
+              <li>Swipe down from the top of your screen to open Quick Settings.</li>
+              <li>Tap <strong>Media Output</strong> or the audio switcher tile.</li>
+              <li>Select your connected Bluetooth headphones, earbuds, or speaker.</li>
+            </ol>
           </div>
         </div>
       </div>

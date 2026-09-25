@@ -551,7 +551,8 @@ body.fullscreen-player-open {
 }
 
 .fullscreen-like-btn,
-.fullscreen-airplay-btn {
+.fullscreen-airplay-btn,
+.fullscreen-audio-output-btn {
   width: 44px;
   height: 44px;
   background: transparent;
@@ -561,7 +562,7 @@ body.fullscreen-player-open {
   align-items: center;
   cursor: pointer;
   padding: 0;
-  transition: transform var(--transition-fast), color var(--transition-fast), opacity var(--transition-fast);
+  transition: transform var(--transition-fast), color 0.4s ease, filter 0.4s ease, opacity var(--transition-fast);
   opacity: 0.9;
 }
 
@@ -569,14 +570,28 @@ body.fullscreen-player-open {
   justify-content: flex-start;
 }
 
-.fullscreen-airplay-btn {
+.fullscreen-airplay-btn,
+.fullscreen-audio-output-btn {
   justify-content: flex-end;
+  color: var(--timeline-accent, #fa2d48);
+  filter: drop-shadow(0 0 8px var(--timeline-accent-glow, rgba(250, 45, 72, 0.45)));
 }
 
 .fullscreen-like-btn:hover,
-.fullscreen-airplay-btn:hover {
+.fullscreen-airplay-btn:hover,
+.fullscreen-audio-output-btn:hover {
   opacity: 1;
   transform: scale(1.12);
+}
+
+.fullscreen-airplay-btn:hover,
+.fullscreen-audio-output-btn:hover {
+  filter: drop-shadow(0 0 12px var(--timeline-accent-glow, rgba(250, 45, 72, 0.7)));
+}
+
+.fullscreen-airplay-btn:active,
+.fullscreen-audio-output-btn:active {
+  transform: scale(0.92);
 }
 
 .fullscreen-like-btn.liked {
@@ -761,3 +776,360 @@ body.fullscreen-player-open {
     height: 52px;
   }
 }
+
+/* ==========================================================================
+   GLASSMORPHIC AUDIO OUTPUT / DEVICE SELECTOR (MOBILE & ANDROID)
+   ========================================================================== */
+
+.audio-output-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10001; /* Layered directly above fullscreen player (z-index 1000) */
+  background: rgba(0, 0, 0, 0.58);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.audio-output-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.audio-output-sheet {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  background: rgba(20, 20, 26, 0.74);
+  -webkit-backdrop-filter: blur(32px) saturate(190%);
+  backdrop-filter: blur(32px) saturate(190%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-top: 1px solid var(--timeline-accent-glow-subtle, rgba(255, 255, 255, 0.22));
+  border-bottom: none;
+  border-radius: 28px 28px 0 0;
+  box-shadow: 0 -16px 50px rgba(0, 0, 0, 0.8),
+              0 0 40px var(--timeline-accent-glow-subtle, rgba(250, 45, 72, 0.15)),
+              inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  padding: 12px 20px calc(env(safe-area-inset-bottom, 0px) + 24px);
+  transform: translateY(100%) scale(0.98);
+  opacity: 0;
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 0.22s ease,
+              border-color 0.4s ease,
+              box-shadow 0.4s ease;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.audio-output-backdrop.open .audio-output-sheet {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+}
+
+.audio-output-backdrop.closing .audio-output-sheet {
+  transform: translateY(100%) scale(0.98);
+  opacity: 0;
+}
+
+/* Sheet Top Handle */
+.audio-output-handle {
+  width: 40px;
+  height: 5px;
+  border-radius: var(--radius-full, 9999px);
+  background: rgba(255, 255, 255, 0.28);
+  margin: 0 auto 14px;
+  flex-shrink: 0;
+  cursor: grab;
+  transition: background var(--transition-fast);
+}
+
+.audio-output-handle:active {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+/* Header */
+.audio-output-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 14px;
+  flex-shrink: 0;
+}
+
+.audio-output-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.audio-output-pulse-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--timeline-accent, #fa2d48);
+  box-shadow: 0 0 10px var(--timeline-accent-glow, rgba(250, 45, 72, 0.6));
+  transition: background 0.4s ease, box-shadow 0.4s ease;
+  animation: pulseThemeDot 2.2s infinite ease-in-out;
+}
+
+@keyframes pulseThemeDot {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.3);
+    opacity: 1;
+    filter: brightness(1.2);
+  }
+}
+
+.audio-output-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.audio-output-close-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: all var(--transition-fast);
+}
+
+.audio-output-close-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+  transform: scale(1.08);
+}
+
+/* Scrollable Content Body */
+.audio-output-body {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-right: 2px;
+}
+
+.audio-output-section-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 4px;
+}
+
+.audio-device-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.audio-device-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.4s ease, box-shadow 0.4s ease, transform var(--transition-fast);
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.audio-device-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.audio-device-item:active {
+  transform: scale(0.985);
+}
+
+.audio-device-item.active {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--timeline-accent, #fa2d48);
+  box-shadow: 0 0 18px var(--timeline-accent-glow-subtle, rgba(250, 45, 72, 0.22)), inset 0 0 14px rgba(255, 255, 255, 0.03);
+}
+
+.audio-device-main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  flex: 1;
+}
+
+.audio-device-icon-wrap {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.07);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.85);
+  flex-shrink: 0;
+  transition: all 0.3s ease;
+}
+
+.audio-device-item.active .audio-device-icon-wrap {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--timeline-accent, #fa2d48);
+  box-shadow: 0 0 12px var(--timeline-accent-glow-subtle, rgba(250, 45, 72, 0.3));
+}
+
+.audio-device-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.audio-device-name {
+  font-size: 0.94rem;
+  font-weight: 600;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.audio-device-status {
+  font-size: 0.77rem;
+  color: rgba(255, 255, 255, 0.55);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.audio-device-item.active .audio-device-status {
+  color: var(--timeline-accent, #fa2d48);
+  font-weight: 500;
+}
+
+.audio-device-check {
+  color: var(--timeline-accent, #fa2d48);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 6px var(--timeline-accent-glow, rgba(250, 45, 72, 0.5)));
+  transition: color 0.4s ease, filter 0.4s ease;
+}
+
+/* Info Banner Card */
+.audio-output-info-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  margin-top: 4px;
+}
+
+.audio-output-info-icon {
+  color: var(--timeline-accent, #fa2d48);
+  flex-shrink: 0;
+  margin-top: 2px;
+  transition: color 0.4s ease;
+}
+
+.audio-output-info-title {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 2px;
+}
+
+.audio-output-info-desc {
+  font-size: 0.76rem;
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.4;
+}
+
+/* Quick Bluetooth / System Guide Button */
+.audio-output-guide-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 11px 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  color: #ffffff;
+  font-size: 0.83rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  margin-top: 4px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.audio-output-guide-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.audio-output-guide-card {
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 12px;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.75);
+  line-height: 1.5;
+  animation: fadeIn 0.2s ease;
+}
+
+.audio-output-guide-card ol {
+  padding-left: 18px;
+  margin: 6px 0 0;
+}
+
+.audio-output-guide-card li {
+  margin-bottom: 4px;
+}
+
+@media (max-height: 600px) and (max-width: 640px) {
+  .audio-output-sheet {
+    max-height: 92vh;
+    padding: 10px 16px calc(env(safe-area-inset-bottom, 0px) + 16px);
+  }
+  .audio-device-item {
+    padding: 9px 12px;
+  }
+}
+

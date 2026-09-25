@@ -220,6 +220,19 @@ class App {
       btnFullscreenLyrics: document.getElementById('btnFullscreenLyrics'),
       btnFullscreenDownload: document.getElementById('btnFullscreenDownload'),
       btnFullscreenShare: document.getElementById('btnFullscreenShare'),
+      btnFullscreenAudioOutput: document.getElementById('btnFullscreenAudioOutput') || document.getElementById('btnFullscreenAirplay'),
+      audioOutputModal: document.getElementById('audioOutputModal'),
+      audioOutputSheet: document.getElementById('audioOutputSheet'),
+      audioOutputHandle: document.getElementById('audioOutputHandle'),
+      audioOutputPulseDot: document.getElementById('audioOutputPulseDot'),
+      btnCloseAudioOutput: document.getElementById('btnCloseAudioOutput'),
+      audioOutputBody: document.getElementById('audioOutputBody'),
+      audioCurrentDeviceList: document.getElementById('audioCurrentDeviceList'),
+      audioAvailableSectionLabel: document.getElementById('audioAvailableSectionLabel'),
+      audioAvailableDeviceList: document.getElementById('audioAvailableDeviceList'),
+      audioOutputInfoCard: document.getElementById('audioOutputInfoCard'),
+      btnAudioOutputGuide: document.getElementById('btnAudioOutputGuide'),
+      audioOutputGuideCard: document.getElementById('audioOutputGuideCard'),
       btnFullscreenAddToPlaylist: document.getElementById('btnFullscreenAddToPlaylist'),
       btnFullscreenUpNext: document.getElementById('btnFullscreenUpNext'),
       fullscreenProgressSlider: document.getElementById('fullscreenProgressSlider'),
@@ -526,6 +539,267 @@ class App {
       return;
     }
     UIManager.showShareModal(track);
+  }
+
+  // --- Mobile Audio Output / Device Selector (Spotify-style) ---
+  initAudioOutputSelector() {
+    const btnOutput = this.dom.btnFullscreenAudioOutput || document.getElementById('btnFullscreenAirplay');
+    if (btnOutput) {
+      btnOutput.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.openAudioOutputModal();
+      });
+    }
+
+    if (this.dom.btnCloseAudioOutput) {
+      this.dom.btnCloseAudioOutput.addEventListener('click', () => {
+        this.closeAudioOutputModal();
+      });
+    }
+
+    if (this.dom.audioOutputModal) {
+      this.dom.audioOutputModal.addEventListener('click', (e) => {
+        if (e.target === this.dom.audioOutputModal) {
+          this.closeAudioOutputModal();
+        }
+      });
+    }
+
+    // Android / system guide toggle
+    if (this.dom.btnAudioOutputGuide && this.dom.audioOutputGuideCard) {
+      this.dom.btnAudioOutputGuide.addEventListener('click', () => {
+        const isHidden = this.dom.audioOutputGuideCard.style.display === 'none';
+        this.dom.audioOutputGuideCard.style.display = isHidden ? 'block' : 'none';
+      });
+    }
+
+    // Touch gesture dismiss on mobile bottom sheet handle & surface
+    if (this.dom.audioOutputSheet) {
+      let touchStartY = 0;
+      let touchCurrentY = 0;
+      let isSheetDragging = false;
+
+      this.dom.audioOutputSheet.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1) return;
+        // Don't drag sheet if scrolling inner body content
+        if (e.target.closest('.audio-output-body') && this.dom.audioOutputBody && this.dom.audioOutputBody.scrollTop > 0) {
+          isSheetDragging = false;
+          return;
+        }
+        touchStartY = e.touches[0].clientY;
+        touchCurrentY = touchStartY;
+        isSheetDragging = true;
+      }, { passive: true });
+
+      this.dom.audioOutputSheet.addEventListener('touchmove', (e) => {
+        if (!isSheetDragging) return;
+        touchCurrentY = e.touches[0].clientY;
+        const deltaY = touchCurrentY - touchStartY;
+        if (deltaY > 0) {
+          this.dom.audioOutputSheet.style.transform = `translateY(${deltaY}px)`;
+        }
+      }, { passive: true });
+
+      const handleTouchEnd = () => {
+        if (!isSheetDragging) return;
+        isSheetDragging = false;
+        const deltaY = touchCurrentY - touchStartY;
+        this.dom.audioOutputSheet.style.transform = '';
+        if (deltaY > 75) {
+          this.closeAudioOutputModal();
+        }
+      };
+
+      this.dom.audioOutputSheet.addEventListener('touchend', handleTouchEnd);
+      this.dom.audioOutputSheet.addEventListener('touchcancel', handleTouchEnd);
+    }
+
+    // Listen to real device connection / disconnection changes
+    if (typeof navigator !== 'undefined' && navigator.mediaDevices && typeof navigator.mediaDevices.addEventListener === 'function') {
+      navigator.mediaDevices.addEventListener('devicechange', () => {
+        if (this.dom.audioOutputModal && this.dom.audioOutputModal.classList.contains('open')) {
+          this.renderAudioOutputDevices();
+        }
+      });
+    }
+
+    // Keyboard accessibility: Escape key dismisses sheet
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && this.dom.audioOutputModal && this.dom.audioOutputModal.classList.contains('open')) {
+        this.closeAudioOutputModal();
+      }
+    });
+
+    // Listen to player audio output change
+    player.on('audioOutputChange', () => {
+      if (this.dom.audioOutputModal && this.dom.audioOutputModal.classList.contains('open')) {
+        this.renderAudioOutputDevices();
+      }
+    });
+  }
+
+  openAudioOutputModal() {
+    if (!this.dom.audioOutputModal) return;
+    this.dom.audioOutputModal.classList.remove('closing');
+    this.dom.audioOutputModal.classList.add('open');
+    this.dom.audioOutputModal.setAttribute('aria-hidden', 'false');
+    this.renderAudioOutputDevices();
+  }
+
+  closeAudioOutputModal() {
+    if (!this.dom.audioOutputModal || !this.dom.audioOutputModal.classList.contains('open')) return;
+    this.dom.audioOutputModal.classList.add('closing');
+    setTimeout(() => {
+      this.dom.audioOutputModal.classList.remove('open', 'closing');
+      this.dom.audioOutputModal.setAttribute('aria-hidden', 'true');
+      if (this.dom.audioOutputSheet) {
+        this.dom.audioOutputSheet.style.transform = '';
+      }
+    }, 200);
+  }
+
+  async renderAudioOutputDevices() {
+    if (!this.dom.audioCurrentDeviceList) return;
+
+    const supportsSinkId = player.isSetSinkIdSupported();
+    const rawDevices = await player.getAudioOutputDevices();
+    const currentSinkId = player.getCurrentSinkId();
+
+    const getDeviceIcon = (label) => {
+      const lower = (label || '').toLowerCase();
+      if (lower.includes('headphone') || lower.includes('ear') || lower.includes('bud') || lower.includes('airpod') || lower.includes('wh-') || lower.includes('headset') || lower.includes('bluetooth')) {
+        return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"></path><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"></path></svg>`;
+      }
+      if (lower.includes('speaker') || lower.includes('sound') || lower.includes('audio') || lower.includes('echo') || lower.includes('homepod') || lower.includes('jbl') || lower.includes('bose') || lower.includes('bar')) {
+        return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"></rect><circle cx="12" cy="14" r="4"></circle><line x1="12" y1="6" x2="12.01" y2="6"></line></svg>`;
+      }
+      return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>`;
+    };
+
+    // Filter real devices with distinct non-empty labels or IDs
+    // DO NOT invent or hardcode fake Bluetooth devices
+    const validOutputs = rawDevices.filter(d => d.deviceId);
+    const namedOutputs = validOutputs.filter(d => d.label && d.label.trim().length > 0);
+    const hasRealDeviceNames = namedOutputs.length > 0;
+
+    let activeDevice = null;
+    let availableDevices = [];
+
+    if (hasRealDeviceNames && supportsSinkId) {
+      namedOutputs.forEach(device => {
+        const isDefault = device.deviceId === 'default';
+        const isActive = (currentSinkId === 'default' && isDefault) || (currentSinkId === device.deviceId);
+        if (isActive) {
+          activeDevice = device;
+        } else {
+          availableDevices.push(device);
+        }
+      });
+      if (!activeDevice && namedOutputs.length > 0) {
+        activeDevice = namedOutputs[0];
+        availableDevices = namedOutputs.slice(1);
+      }
+    }
+
+    // 1. Render Current Active Output
+    let currentHtml = '';
+    if (activeDevice) {
+      const iconSvg = getDeviceIcon(activeDevice.label);
+      currentHtml = `
+        <div class="audio-device-item active" data-device-id="${activeDevice.deviceId}">
+          <div class="audio-device-main">
+            <div class="audio-device-icon-wrap">${iconSvg}</div>
+            <div class="audio-device-info">
+              <div class="audio-device-name">${activeDevice.label || 'Default Audio Output'}</div>
+              <div class="audio-device-status">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="6"></circle></svg>
+                Connected
+              </div>
+            </div>
+          </div>
+          <div class="audio-device-check" title="Currently active output">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+          </div>
+        </div>
+      `;
+    } else {
+      const isMobileDevice = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
+      const phoneTitle = isMobileDevice ? 'This phone' : 'This computer';
+      const phoneSubtitle = isMobileDevice ? 'Phone speaker' : 'Default audio output';
+      currentHtml = `
+        <div class="audio-device-item active" data-device-id="default">
+          <div class="audio-device-main">
+            <div class="audio-device-icon-wrap">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="5" y="2" width="14" height="20" rx="2"></rect>
+                <line x1="12" y1="18" x2="12.01" y2="18"></line>
+              </svg>
+            </div>
+            <div class="audio-device-info">
+              <div class="audio-device-name">${phoneTitle}</div>
+              <div class="audio-device-status">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="6"></circle></svg>
+                ${phoneSubtitle}
+              </div>
+            </div>
+          </div>
+          <div class="audio-device-check" title="Currently active output">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+          </div>
+        </div>
+      `;
+    }
+    this.dom.audioCurrentDeviceList.innerHTML = currentHtml;
+
+    // 2. Render Available Outputs (if real distinct devices detected)
+    if (availableDevices.length > 0) {
+      if (this.dom.audioAvailableSectionLabel) {
+        this.dom.audioAvailableSectionLabel.style.display = 'block';
+      }
+      if (this.dom.audioAvailableDeviceList) {
+        this.dom.audioAvailableDeviceList.style.display = 'flex';
+        this.dom.audioAvailableDeviceList.innerHTML = availableDevices.map(d => {
+          const iconSvg = getDeviceIcon(d.label);
+          return `
+            <div class="audio-device-item" data-device-id="${d.deviceId}">
+              <div class="audio-device-main">
+                <div class="audio-device-icon-wrap">${iconSvg}</div>
+                <div class="audio-device-info">
+                  <div class="audio-device-name">${d.label || 'Audio Device'}</div>
+                  <div class="audio-device-status">Available</div>
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        this.dom.audioAvailableDeviceList.querySelectorAll('.audio-device-item').forEach(item => {
+          item.addEventListener('click', async () => {
+            const targetId = item.dataset.deviceId;
+            const result = await player.setAudioOutputDevice(targetId);
+            if (result.success) {
+              const devName = item.querySelector('.audio-device-name')?.textContent || 'device';
+              UIManager.showToast(`Connected to ${devName}`, 'success');
+              this.renderAudioOutputDevices();
+            } else {
+              UIManager.showToast('Audio routing managed by Android system settings', 'info');
+            }
+          });
+        });
+      }
+    } else {
+      if (this.dom.audioAvailableSectionLabel) {
+        this.dom.audioAvailableSectionLabel.style.display = 'none';
+      }
+      if (this.dom.audioAvailableDeviceList) {
+        this.dom.audioAvailableDeviceList.style.display = 'none';
+        this.dom.audioAvailableDeviceList.innerHTML = '';
+      }
+    }
   }
 
   openAddToPlaylist(track) {
@@ -1168,16 +1442,8 @@ class App {
       });
     }
 
-    const btnFullscreenAirplay = document.getElementById('btnFullscreenAirplay');
-    if (btnFullscreenAirplay) {
-      btnFullscreenAirplay.addEventListener('click', () => {
-        if (this.dom.mobileModal) {
-          this.dom.mobileModal.classList.add('open');
-        } else {
-          UIManager.showToast('AirPlay / Audio Output', 'info');
-        }
-      });
-    }
+    // Mobile Audio Output / Device Selector
+    this.initAudioOutputSelector();
 
     if (this.dom.btnFullscreenUpNext) {
       this.dom.btnFullscreenUpNext.addEventListener('click', () => {
@@ -2117,7 +2383,9 @@ class App {
         this.dom.fullscreenProgressThumb,
         this.dom.progressThumb,
         this.dom.fullscreenProgressTooltip,
-        this.dom.progressTooltip
+        this.dom.progressTooltip,
+        this.dom.btnFullscreenAudioOutput,
+        this.dom.audioOutputSheet
       ];
       targets.forEach(el => {
         if (el) {
@@ -2126,6 +2394,11 @@ class App {
           el.style.setProperty('--timeline-accent-glow-subtle', colors.glowSoft);
         }
       });
+
+      if (this.dom.btnFullscreenAudioOutput) {
+        this.dom.btnFullscreenAudioOutput.style.color = colors.primary;
+        this.dom.btnFullscreenAudioOutput.style.filter = `drop-shadow(0 0 8px ${colors.glow})`;
+      }
     });
 
     if (this.dom.btnFullscreenSpeed) {
