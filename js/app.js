@@ -14,6 +14,7 @@ import { ColorExtractor } from './colorExtractor.js';
 import { sleepMode } from './sleepMode.js';
 import { SLEEP_FILTERS, getSleepTracks } from './sleepData.js';
 import { TRAVEL_CATEGORIES, OVERALL_TRAVEL_SONGS, CATEGORY_SONGS, getSuggestedTravelSongs } from './travelData.js';
+import { MOOD_CATEGORIES, VIBE_CATEGORIES, getVibesSongs } from './vibesData.js';
 
 class App {
   constructor() {
@@ -32,6 +33,12 @@ class App {
     this.activeSleepFilter = 'all';
     this.activeTravelCategory = null; // null => Overall Traveling Songs
     this.isTravelSuggestActive = false;
+
+    // Mobile Vibes & Mood State
+    this.previousViewBeforeVibes = 'home';
+    this.activeMoodCategory = null;
+    this.isMoreMenuOpen = false;
+    this.vibesRequestId = 0;
 
     // Visualizer instance
     this.visualizer = null;
@@ -97,6 +104,14 @@ class App {
       mobileMenuBtn: document.getElementById('mobileMenuBtn'),
       sidebar: document.getElementById('sidebar'),
       contentArea: document.getElementById('contentArea'),
+
+      // Mobile More Menu Modal
+      moreMenuModal: document.getElementById('moreMenuModal'),
+      moreMenuSheet: document.getElementById('moreMenuSheet'),
+      moreMenuHandle: document.getElementById('moreMenuHandle'),
+      btnCloseMoreMenu: document.getElementById('btnCloseMoreMenu'),
+      btnMoreVibes: document.getElementById('btnMoreVibes'),
+      btnMoreRecent: document.getElementById('btnMoreRecent'),
 
       // Search
       searchContainer: document.getElementById('searchContainer'),
@@ -802,6 +817,130 @@ class App {
     }
   }
 
+  // --- Mobile More Menu & Touch Navigation ---
+  initMoreMenu() {
+    if (!this.dom.moreMenuModal) return;
+
+    // Close button
+    if (this.dom.btnCloseMoreMenu) {
+      this.dom.btnCloseMoreMenu.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.closeMoreMenu();
+      });
+    }
+
+    // Backdrop click to close
+    this.dom.moreMenuModal.addEventListener('click', (e) => {
+      if (e.target === this.dom.moreMenuModal) {
+        this.closeMoreMenu();
+      }
+    });
+
+    // More menu item: Vibes & Mood
+    if (this.dom.btnMoreVibes) {
+      this.dom.btnMoreVibes.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.closeMoreMenu();
+        if (this.currentView !== 'vibes' && this.currentView !== 'more') {
+          this.previousViewBeforeVibes = this.currentView;
+        }
+        this.activeMoodCategory = null;
+        this.navigate('vibes');
+      });
+    }
+
+    // More menu item: Recent
+    if (this.dom.btnMoreRecent) {
+      this.dom.btnMoreRecent.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.closeMoreMenu();
+        this.navigate('recent');
+      });
+    }
+
+    // Touch gesture drag-down to dismiss sheet
+    if (this.dom.moreMenuSheet) {
+      let touchStartY = 0;
+      let touchCurrentY = 0;
+      let isSheetDragging = false;
+
+      this.dom.moreMenuSheet.addEventListener('touchstart', (e) => {
+        touchStartY = e.touches[0].clientY;
+        touchCurrentY = touchStartY;
+        isSheetDragging = true;
+      }, { passive: true });
+
+      this.dom.moreMenuSheet.addEventListener('touchmove', (e) => {
+        if (!isSheetDragging) return;
+        touchCurrentY = e.touches[0].clientY;
+        const delta = touchCurrentY - touchStartY;
+        if (delta > 0) {
+          this.dom.moreMenuSheet.style.transform = `translateY(${delta}px)`;
+        }
+      }, { passive: true });
+
+      this.dom.moreMenuSheet.addEventListener('touchend', () => {
+        if (!isSheetDragging) return;
+        isSheetDragging = false;
+        const delta = touchCurrentY - touchStartY;
+        this.dom.moreMenuSheet.style.transform = '';
+        if (delta > 75) {
+          this.closeMoreMenu();
+        }
+      }, { passive: true });
+    }
+  }
+
+  openMoreMenu() {
+    if (!this.dom.moreMenuModal) return;
+    this.dom.moreMenuModal.classList.remove('closing');
+    this.dom.moreMenuModal.classList.add('open');
+    this.dom.moreMenuModal.setAttribute('aria-hidden', 'false');
+    this.isMoreMenuOpen = true;
+    document.body.style.overflow = 'hidden';
+  }
+
+  closeMoreMenu() {
+    if (!this.dom.moreMenuModal || !this.dom.moreMenuModal.classList.contains('open')) return;
+    this.dom.moreMenuModal.classList.add('closing');
+    this.isMoreMenuOpen = false;
+    document.body.style.overflow = '';
+    setTimeout(() => {
+      this.dom.moreMenuModal.classList.remove('open', 'closing');
+      this.dom.moreMenuModal.setAttribute('aria-hidden', 'true');
+      if (this.dom.moreMenuSheet) {
+        this.dom.moreMenuSheet.style.transform = '';
+      }
+    }, 200);
+  }
+
+  bindPopstateNavigation() {
+    window.addEventListener('popstate', (e) => {
+      if (this.isMoreMenuOpen) {
+        this.closeMoreMenu();
+        return;
+      }
+
+      if (this.currentView === 'vibes') {
+        if (this.activeMoodCategory) {
+          this.activeMoodCategory = null;
+          this.renderVibesView(false);
+          return;
+        } else {
+          this.navigate(this.previousViewBeforeVibes || 'home', false);
+          return;
+        }
+      }
+
+      const stateView = e.state?.view;
+      if (stateView && stateView !== this.currentView) {
+        this.navigate(stateView, false);
+      }
+    });
+  }
+
   openAddToPlaylist(track) {
     if (!track) return;
     UIManager.showAddToPlaylistModal(
@@ -923,6 +1062,10 @@ class App {
 
   // --- UI Event Bindings ---
   bindEvents() {
+    // Mobile More Menu & History Navigation
+    this.initMoreMenu();
+    this.bindPopstateNavigation();
+
     // Sidebar Navigation
     this.dom.navLinks.forEach(link => {
       link.addEventListener('click', (e) => {
@@ -2071,6 +2214,7 @@ class App {
           this.downloadTrack(player.currentTrack);
           break;
         case 'Escape':
+          if (this.isMoreMenuOpen) this.closeMoreMenu();
           this.dom.lyricsOverlay.classList.remove('open');
           this.toggleFullscreen(false);
           this.dom.queueDrawer.classList.remove('open');
@@ -2721,15 +2865,25 @@ class App {
   }
 
   // --- Views Navigation ---
-  async navigate(view) {
+  async navigate(view, updateHistory = true) {
+    if (view === 'more') {
+      this.openMoreMenu();
+      return;
+    }
+
     this.currentView = view;
     this.dom.navLinks.forEach(link => {
       link.classList.toggle('active', link.dataset.view === view);
     });
     if (this.dom.bottomTabs) {
       this.dom.bottomTabs.forEach(tab => {
-        tab.classList.toggle('active', tab.dataset.view === view);
+        const isActive = tab.dataset.view === view || ((view === 'vibes' || view === 'recent') && tab.dataset.view === 'more');
+        tab.classList.toggle('active', isActive);
       });
+    }
+
+    if (updateHistory && window.history && window.history.pushState) {
+      window.history.pushState({ view }, '', `#${view}`);
     }
 
     switch (view) {
@@ -2756,6 +2910,9 @@ class App {
         break;
       case 'recent':
         this.renderRecentView();
+        break;
+      case 'vibes':
+        this.renderVibesView(false);
         break;
       default:
         await this.renderHomeView();
@@ -3326,18 +3483,20 @@ class App {
   }
 
   renderRecentView() {
+    const isMobile = window.innerWidth <= 960;
     const recentSearches = StorageManager.getRecentSearches();
     const recentTracks = StorageManager.getRecentTracks();
 
     this.dom.contentArea.innerHTML = `
       <div class="section-header">
         <div>
-          <h2 class="section-title" style="font-size: 1.85rem; font-weight: 800; letter-spacing: -0.5px;">Recent Activity</h2>
-          <div class="section-subtitle">Your search history and recently played listening sessions</div>
+          <h2 class="section-title" style="font-size: 1.85rem; font-weight: 800; letter-spacing: -0.5px;">${isMobile ? 'Recently Played' : 'Recent Activity'}</h2>
+          <div class="section-subtitle">${isMobile ? 'Songs you listened to recently' : 'Your search history and recently played listening sessions'}</div>
         </div>
       </div>
 
-      <!-- Recent Searches Section -->
+      <!-- Recent Searches Section (Desktop Only - per Requirement 16 for mobile Discovery) -->
+      ${!isMobile ? `
       <div class="recent-searches-box">
         <div class="recent-searches-header">
           <div class="recent-searches-title">
@@ -3373,6 +3532,7 @@ class App {
           `).join('')}
         </div>
       </div>
+      ` : ''}
 
       <!-- Recently Played Songs Section -->
       <div class="section-header" style="margin-top: 10px;">
@@ -3767,6 +3927,261 @@ class App {
     } catch (error) {
       console.warn('[Traveling Vibes] Category search failed:', error);
       if (requestId === this.travelRequestId) this.renderGridItems(container, fallbackTracks);
+    }
+  }
+
+  // --- Mobile Vibes & Mood Discovery ---
+  renderVibesView(updateHistory = true) {
+    this.activeMoodCategory = null;
+    if (updateHistory && window.history && window.history.pushState) {
+      window.history.pushState({ view: 'vibes', subview: 'main' }, '', '#vibes');
+    }
+
+    this.dom.contentArea.innerHTML = `
+      <div class="vibes-view-container">
+        <div class="vibes-hero-header">
+          <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+            <button class="mood-detail-back-btn" id="btnVibesMainBack" title="Back" aria-label="Go Back">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="19" y1="12" x2="5" y2="12"></line>
+                <polyline points="12 19 5 12 12 5"></polyline>
+              </svg>
+              <span>Back</span>
+            </button>
+            <div class="vibes-hero-badge">Discovery</div>
+          </div>
+          <h1 class="vibes-hero-title">VIBES & MOOD</h1>
+          <p class="vibes-hero-subtitle">Choose your mood. We'll find the music.</p>
+        </div>
+
+        <!-- Moods Section -->
+        <div class="vibes-section-block">
+          <div class="vibes-section-header">
+            <h2 class="vibes-section-name">
+              <span>❤️</span> MOODS
+            </h2>
+            <p class="vibes-section-desc">Tune your soundtrack to how you feel inside</p>
+          </div>
+          <div class="vibes-grid" id="moodsGrid">
+            ${MOOD_CATEGORIES.map(cat => `
+              <div class="vibe-card" data-cat-id="${cat.id}" data-cat-type="mood" style="background: ${cat.gradient}; border-color: ${cat.color}40;">
+                <div class="vibe-card-top">
+                  <span class="vibe-card-emoji">${cat.emoji}</span>
+                  <div class="vibe-card-play-hint">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg>
+                  </div>
+                </div>
+                <div class="vibe-card-bottom">
+                  <div class="vibe-card-name">${cat.name}</div>
+                  <div class="vibe-card-tagline">${cat.tagline || cat.description}</div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+
+        <!-- Vibes Section -->
+        <div class="vibes-section-block">
+          <div class="vibes-section-header">
+            <h2 class="vibes-section-name">
+              <span>🚗</span> VIBES
+            </h2>
+            <p class="vibes-section-desc">Music tailored for your activities, journeys and moments</p>
+          </div>
+          <div class="vibes-grid" id="vibesGrid">
+            ${VIBE_CATEGORIES.map(cat => `
+              <div class="vibe-card" data-cat-id="${cat.id}" data-cat-type="vibe" style="background: ${cat.gradient}; border-color: ${cat.color}40;">
+                <div class="vibe-card-top">
+                  <span class="vibe-card-emoji">${cat.emoji}</span>
+                  <div class="vibe-card-play-hint">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg>
+                  </div>
+                </div>
+                <div class="vibe-card-bottom">
+                  <div class="vibe-card-name">${cat.name}</div>
+                  <div class="vibe-card-tagline">${cat.tagline || cat.description}</div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Back button in main screen
+    document.getElementById('btnVibesMainBack')?.addEventListener('click', () => {
+      if (this.previousViewBeforeVibes && this.previousViewBeforeVibes !== 'vibes') {
+        this.navigate(this.previousViewBeforeVibes);
+      } else {
+        this.navigate('home');
+      }
+    });
+
+    // Mood & Vibe Card Clicks
+    document.querySelectorAll('.vibe-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const catId = card.dataset.catId;
+        const catType = card.dataset.catType;
+        const list = catType === 'mood' ? MOOD_CATEGORIES : VIBE_CATEGORIES;
+        const category = list.find(c => c.id === catId);
+        if (category) {
+          this.renderMoodDetailView(category);
+        }
+      });
+    });
+  }
+
+  async renderMoodDetailView(category, updateHistory = true) {
+    this.activeMoodCategory = category;
+    if (updateHistory && window.history && window.history.pushState) {
+      window.history.pushState({ view: 'vibes', subview: 'detail', catId: category.id }, '', `#vibes-${category.id}`);
+    }
+
+    const requestId = ++this.vibesRequestId;
+
+    this.dom.contentArea.innerHTML = `
+      <div class="mood-detail-view">
+        <div class="mood-detail-hero" style="background: ${category.gradient}; border-color: ${category.color}44; box-shadow: 0 12px 32px ${category.glow || 'rgba(0,0,0,0.5)'};">
+          <div class="mood-detail-top-nav">
+            <button class="mood-detail-back-btn" id="btnMoodDetailBack" title="Back" aria-label="Go Back">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="19" y1="12" x2="5" y2="12"></line>
+                <polyline points="12 19 5 12 12 5"></polyline>
+              </svg>
+              <span>Back</span>
+            </button>
+            <div class="mood-detail-badge">${category.name}</div>
+          </div>
+
+          <div class="mood-detail-hero-content">
+            <div class="mood-detail-hero-emoji">${category.emoji}</div>
+            <div class="mood-detail-hero-meta">
+              <h1 class="mood-detail-hero-title">${category.name.toUpperCase()}</h1>
+              <p class="mood-detail-hero-subtitle">Songs for your current vibe • ${category.tagline || category.description}</p>
+            </div>
+          </div>
+
+          <div class="mood-detail-actions" id="moodDetailActions" style="display: none;">
+            <button class="btn-mood-play-all" id="btnPlayAllMood">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="6 3 20 12 6 21 6 3"></polygon>
+              </svg>
+              <span>Play All</span>
+            </button>
+            <button class="btn-mood-shuffle" id="btnShuffleMood">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="16 3 21 3 21 8"></polyline>
+                <line x1="4" y1="20" x2="21" y2="3"></line>
+                <polyline points="21 16 21 21 16 21"></polyline>
+                <line x1="15" y1="15" x2="21" y2="21"></line>
+                <line x1="4" y1="4" x2="9" y2="9"></line>
+              </svg>
+              <span>Shuffle</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Content Area: Recommended songs -->
+        <div class="mood-detail-content">
+          <div class="section-header" style="margin-bottom: 14px;">
+            <div>
+              <h2 class="section-title" style="font-size: 1.35rem;">Recommended for this vibe</h2>
+              <div class="section-subtitle">Specially chosen tracks for ${category.name.toLowerCase()} atmosphere</div>
+            </div>
+          </div>
+
+          <div class="mood-tracks-container" id="moodTracksContainer">
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 240px; gap: 14px;">
+              <div class="spinner"></div>
+              <div style="color: var(--text-secondary); font-size: 0.95rem;">Finding songs for your vibe...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Back button in detail screen -> returns to Vibes main screen
+    document.getElementById('btnMoodDetailBack')?.addEventListener('click', () => {
+      this.renderVibesView();
+    });
+
+    const container = document.getElementById('moodTracksContainer');
+    const actionsBar = document.getElementById('moodDetailActions');
+
+    try {
+      const sessionHistory = [
+        ...(player.sessionHistory || []),
+        ...StorageManager.getRecentTracks().map(t => t.id)
+      ];
+
+      const tracks = await getVibesSongs(category, sessionHistory);
+
+      if (requestId !== this.vibesRequestId) return; // Stale request check
+
+      if (!tracks || tracks.length === 0) {
+        container.innerHTML = `
+          <div class="mood-empty-card">
+            <div style="font-size: 2.8rem; margin-bottom: 8px;">${category.emoji}</div>
+            <div style="font-size: 1.15rem; font-weight: 700; color: #fff; margin-bottom: 6px;">No songs found for this vibe.</div>
+            <div style="font-size: 0.85rem; color: var(--text-secondary); max-width: 320px; margin: 0 auto 16px;">We couldn't load tracks for ${category.name} right now.</div>
+            <div style="display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;">
+              <button class="mood-empty-btn" id="btnRetryMood">Retry</button>
+              <button class="btn-glass" id="btnTryAnotherMood" style="padding: 10px 18px; border-radius: 9999px; font-weight: 600; font-size: 0.88rem;">Try another vibe</button>
+            </div>
+          </div>
+        `;
+        document.getElementById('btnRetryMood')?.addEventListener('click', () => {
+          this.renderMoodDetailView(category, false);
+        });
+        document.getElementById('btnTryAnotherMood')?.addEventListener('click', () => {
+          this.renderVibesView();
+        });
+        return;
+      }
+
+      // Show Play All and Shuffle actions
+      if (actionsBar) actionsBar.style.display = 'flex';
+
+      // Render cards in responsive grid using existing music card architecture
+      container.innerHTML = '<div class="cards-grid" id="moodCardsGrid"></div>';
+      const grid = document.getElementById('moodCardsGrid');
+      this.renderGridItems(grid, tracks);
+
+      // Play All click handler
+      document.getElementById('btnPlayAllMood')?.addEventListener('click', () => {
+        if (tracks.length > 0) {
+          player.playTrack(tracks[0], tracks);
+        }
+      });
+
+      // Shuffle click handler
+      document.getElementById('btnShuffleMood')?.addEventListener('click', () => {
+        if (tracks.length > 0) {
+          const shuffled = [...tracks].sort(() => Math.random() - 0.5);
+          player.playTrack(shuffled[0], shuffled);
+        }
+      });
+
+    } catch (err) {
+      if (requestId !== this.vibesRequestId) return;
+      console.error('Error loading vibes songs:', err);
+      container.innerHTML = `
+        <div class="mood-empty-card">
+          <div style="font-size: 2.8rem; margin-bottom: 8px;">⚠️</div>
+          <div style="font-size: 1.15rem; font-weight: 700; color: #fff; margin-bottom: 6px;">Could not load songs for this vibe</div>
+          <div style="font-size: 0.85rem; color: var(--text-secondary); max-width: 320px; margin: 0 auto 16px;">Please check your network connection and try again.</div>
+          <div style="display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;">
+            <button class="mood-empty-btn" id="btnRetryMood">Retry</button>
+            <button class="btn-glass" id="btnTryAnotherMood" style="padding: 10px 18px; border-radius: 9999px; font-weight: 600; font-size: 0.88rem;">Try another vibe</button>
+          </div>
+        </div>
+      `;
+      document.getElementById('btnRetryMood')?.addEventListener('click', () => {
+        this.renderMoodDetailView(category, false);
+      });
+      document.getElementById('btnTryAnotherMood')?.addEventListener('click', () => {
+        this.renderVibesView();
+      });
     }
   }
 }

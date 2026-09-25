@@ -377,14 +377,69 @@
         </svg>
         <span>Library</span>
       </a>
-      <a class="tab-item" id="tabRecent" data-view="recent">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="10"></circle>
-          <polyline points="12 6 12 12 16 14"></polyline>
+      <a class="tab-item" id="tabMore" data-view="more">
+        <svg viewBox="0 0 24 24" fill="currentColor">
+          <circle cx="12" cy="5" r="2"></circle>
+          <circle cx="12" cy="12" r="2"></circle>
+          <circle cx="12" cy="19" r="2"></circle>
         </svg>
-        <span>Recent</span>
+        <span>More</span>
       </a>
     </nav>
+
+    <!-- ==================== MOBILE MORE MENU SHEET ==================== -->
+    <div class="more-menu-backdrop" id="moreMenuModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="moreMenuTitle">
+      <div class="more-menu-sheet" id="moreMenuSheet">
+        <div class="more-menu-handle" id="moreMenuHandle"></div>
+        <div class="more-menu-header">
+          <h3 class="more-menu-title" id="moreMenuTitle">More</h3>
+          <button class="more-menu-close-btn" id="btnCloseMoreMenu" aria-label="Close menu">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        <div class="more-menu-items">
+          <button class="more-menu-item" id="btnMoreVibes" type="button">
+            <div class="more-menu-item-icon vibes-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 18V5l12-2v13"></path>
+                <circle cx="6" cy="18" r="3"></circle>
+                <circle cx="18" cy="16" r="3"></circle>
+              </svg>
+            </div>
+            <div class="more-menu-item-info">
+              <div class="more-menu-item-title">Vibes & Mood</div>
+              <div class="more-menu-item-desc">Browse music by how you feel or what you do</div>
+            </div>
+            <div class="more-menu-item-arrow">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
+            </div>
+          </button>
+          
+          <button class="more-menu-item" id="btnMoreRecent" type="button">
+            <div class="more-menu-item-icon recent-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12 6 12 12 16 14"></polyline>
+              </svg>
+            </div>
+            <div class="more-menu-item-info">
+              <div class="more-menu-item-title">Recent</div>
+              <div class="more-menu-item-desc">Your recently played songs & listening history</div>
+            </div>
+            <div class="more-menu-item-arrow">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
+            </div>
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- ==================== QUEUE DRAWER ==================== -->
     <aside class="queue-drawer" id="queueDrawer">
