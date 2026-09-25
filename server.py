@@ -769,7 +769,12 @@ def resolve_youtube_audio_stream(video_id, force_refresh=False):
                 'no_warnings': True,
                 'extract_flat': False,
                 'socket_timeout': 10,
-                'nocheckcertificate': True
+                'nocheckcertificate': True,
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['android_vr', 'tv_embedded', 'web']
+                    }
+                }
             }
             if node_path and os.path.exists(node_path):
                 ydl_opts['js_runtimes'] = {'node': {'path': node_path}}

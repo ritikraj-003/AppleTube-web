@@ -17,7 +17,7 @@ class handler(BaseHTTPRequestHandler):
         json_response(self, {
             "status": "online",
             "database": "YouTube Live",
-            "version": "1.2.1-yt",
+            "version": "1.2.2-vr",
             "yt_dlp_installed": yt_ok,
             "yt_dlp_info": yt_msg
         })

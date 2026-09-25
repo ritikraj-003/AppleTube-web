@@ -153,7 +153,12 @@ def resolve_audio(video_id, force_refresh=False):
             'no_warnings': True,
             'extract_flat': False,
             'socket_timeout': 10,
-            'nocheckcertificate': True
+            'nocheckcertificate': True,
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android_vr', 'tv_embedded', 'web']
+                }
+            }
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
