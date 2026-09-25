@@ -122,7 +122,46 @@ def search(query, limit=25):
     return []
 
 
-def resolve_audio(video_id):
+import time
+
+AUDIO_URL_CACHE = {}
+
+def resolve_audio(video_id, force_refresh=False):
+    if not video_id:
+        return None
+
+    if force_refresh:
+        AUDIO_URL_CACHE.pop(video_id, None)
+    elif video_id in AUDIO_URL_CACHE:
+        entry = AUDIO_URL_CACHE[video_id]
+        if isinstance(entry, tuple) and len(entry) == 2:
+            url, ts = entry
+            if time.time() - ts < 7200:
+                return url
+        elif isinstance(entry, str):
+            return entry
+
+    # Method 1: yt-dlp extractor
+    try:
+        import yt_dlp
+        ydl_opts = {
+            'format': 'bestaudio[ext=m4a]/bestaudio/best',
+            'quiet': True,
+            'no_warnings': True,
+            'extract_flat': False,
+            'socket_timeout': 10,
+            'nocheckcertificate': True
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+            stream_url = info.get('url')
+            if stream_url:
+                AUDIO_URL_CACHE[video_id] = (stream_url, time.time())
+                return stream_url
+    except Exception as e:
+        print(f"[api/_youtube yt-dlp error for {video_id}]: {e}")
+
+    # Method 2: Active Piped / Invidious fallback
     for instance in (
         "https://pipedapi.adminforge.de",
         "https://api.piped.privacydev.net",
@@ -135,7 +174,9 @@ def resolve_audio(video_id):
             streams = [stream for stream in data.get("audioStreams", []) if stream.get("url")]
             if streams:
                 streams.sort(key=lambda stream: stream.get("bitrate", 0), reverse=True)
-                return streams[0]["url"]
+                url = streams[0]["url"]
+                AUDIO_URL_CACHE[video_id] = (url, time.time())
+                return url
         except Exception:
             continue
     return None
