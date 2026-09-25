@@ -31,9 +31,9 @@ export const CONFIG = {
 
   // Secondary JioSaavn API Mirrors (Indian & Global Pop)
   SAAVN_API_MIRRORS: [
+    'https://saavn-api.vercel.app',
     'https://saavn.dev/api',
     'https://jiosavan-api-eta.vercel.app',
-    'https://saavn-api.vercel.app',
     'https://jiosaavn-api-privateing-git-master-sakshamarora1.vercel.app'
   ],
 

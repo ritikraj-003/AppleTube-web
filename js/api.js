@@ -91,9 +91,7 @@ class MusicAPI {
   // --- 1. Live YouTube Search (via Live Backend or Invidious) ---
   async searchYouTube(query, limit = 30) {
     // 1A. Try local live server backend first (InnerTube live database)
-    const isLive = await this.checkLiveBackend();
-    const shouldTryBackend = isLive || this.hasLiveBackend !== false || (typeof window !== 'undefined' && Boolean(window.location?.origin));
-    if (shouldTryBackend) {
+    if (this.hasLiveBackend !== false || (typeof window !== 'undefined' && Boolean(window.location?.origin))) {
       try {
         const res = await fetch(`/api/yt/search?q=${encodeURIComponent(query)}&limit=${limit}`, {
           signal: AbortSignal.timeout(8000)
@@ -109,7 +107,7 @@ class MusicAPI {
           console.warn(`[Music] Live search service returned HTTP ${res.status}`);
         }
       } catch (e) {
-        console.warn('Live backend query timed out, falling back to public mirrors...');
+        console.warn('Live backend query timed out, falling back to alternative sources...', e);
       }
     }
 
@@ -347,8 +345,10 @@ class MusicAPI {
       );
     }
 
-    this.searchCache.set(trimmed, results);
-    return results;
+    if (Array.isArray(results) && results.length > 0) {
+      this.searchCache.set(trimmed, results);
+    }
+    return results || [];
   }
 
   // --- JioSaavn API Implementation ---

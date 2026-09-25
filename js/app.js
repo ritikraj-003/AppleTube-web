@@ -3259,7 +3259,7 @@ class App {
           const card = UIManager.createMusicCard(
             track,
             player.currentTrack?.id,
-            (t) => (player.currentTrack?.id === t.id ? player.togglePlay() : player.playWithSeed(t, 'search')),
+            (t) => (player.currentTrack?.id === t.id ? player.togglePlay() : player.playTrack(t, tracks, { type: 'search' })),
             async (t, isLiked) => {
               await auth.syncCollectionToServer();
               if (this.currentView === 'liked') this.renderLikedView();
@@ -3279,7 +3279,7 @@ class App {
             track,
             idx,
             player.currentTrack?.id,
-            (t) => (player.currentTrack?.id === t.id ? player.togglePlay() : player.playWithSeed(t, 'search')),
+            (t) => (player.currentTrack?.id === t.id ? player.togglePlay() : player.playTrack(t, tracks, { type: 'search' })),
             async (t, isLiked) => {
               await auth.syncCollectionToServer();
               if (this.currentView === 'liked') this.renderLikedView();

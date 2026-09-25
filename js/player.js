@@ -387,25 +387,24 @@ class AudioPlayer {
       }
     }
 
-    // If all direct stream methods failed, show clean error without using iframe
+    // If all direct stream methods failed, show clean error without skipping track
     console.warn(`Direct audio stream unavailable for: ${track.title}`);
     UIManager.showToast(`Audio unavailable for "${track.title}"`, 'warning');
     this.notify('playbackChange', false);
     this.updateMediaSessionPlaybackState('paused');
-
-    // Auto-advance to next track if available
-    if (this.hasNext()) {
-      setTimeout(() => {
-        if (this.hasNext()) {
-          UIManager.showToast('Playing next track...', 'info');
-          this.next(true);
-        }
-      }, 1500);
-    }
+    // Note: NEVER automatically advance to the next track on playback error.
   }
 
   // --- Track Ended Handler ---
   handleTrackEnded() {
+    const dur = this.duration;
+    const cur = this.currentTime;
+    // Guard against premature or spurious ended events (e.g. 0 duration, unplayed track)
+    if (!this.currentTrack || dur <= 0 || (cur < 1 && !this.hasRecordedCompletion)) {
+      console.warn('[AudioPlayer] Ignoring spurious ended event (track did not genuinely finish):', { cur, dur });
+      return;
+    }
+
     if (this.currentTrack && !this.hasRecordedCompletion) {
       this.hasRecordedCompletion = true;
       StorageManager.recordPlaybackEvent(this.currentTrack, 'complete');
@@ -864,10 +863,19 @@ class AudioPlayer {
     const playPromise = this.audio.play();
     if (playPromise !== undefined) {
       playPromise.catch(err => {
-        console.warn('Native HTMLAudio play promise rejected:', err);
-        if (err.name !== 'AbortError') {
-          this.handleAudioPlaybackError();
+        if (err.name === 'AbortError') {
+          // Play was superseded by a new track or load operation
+          return;
         }
+        if (err.name === 'NotAllowedError') {
+          // Autoplay policy prevented automatic playback; pause UI and wait for user play tap
+          console.warn('[AudioPlayer] Playback not allowed by autoplay policy:', err);
+          this.notify('playbackChange', false);
+          this.updateMediaSessionPlaybackState('paused');
+          return;
+        }
+        console.warn('Native HTMLAudio play promise rejected:', err);
+        this.handleAudioPlaybackError();
       });
     }
   }
@@ -887,7 +895,7 @@ class AudioPlayer {
 
     if (this.audio.paused) {
       this.audio.play().catch(err => {
-        if (err.name !== 'AbortError') {
+        if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') {
           this.handleAudioPlaybackError();
         }
       });
@@ -911,7 +919,7 @@ class AudioPlayer {
       this.updateMediaSessionPlaybackState('playing');
       this.requestWakeLock();
       this.audio.play().catch(err => {
-        if (err.name !== 'AbortError') {
+        if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') {
           this.handleAudioPlaybackError();
         }
       });

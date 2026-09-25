@@ -234,7 +234,7 @@ def search_youtube_innertube(query, limit=30):
         "context": {
             "client": {
                 "clientName": "WEB",
-                "clientVersion": "2.20230522.01.00",
+                "clientVersion": "2.20240101.01.00",
                 "hl": "en",
                 "gl": "US"
             }
@@ -251,12 +251,12 @@ def search_youtube_innertube(query, limit=30):
     try:
         data = None
         if HTTP_SESSION is not None:
-            resp = HTTP_SESSION.post(url, json=payload, headers=headers, timeout=3.8)
+            resp = HTTP_SESSION.post(url, json=payload, headers=headers, timeout=6.0)
             if resp.status_code == 200:
                 data = resp.json()
         else:
             req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers)
-            with urllib.request.urlopen(req, timeout=3.8) as response:
+            with urllib.request.urlopen(req, timeout=6.0) as response:
                 if response.status == 200:
                     data = json.loads(response.read().decode('utf-8'))
             
@@ -269,72 +269,85 @@ def search_youtube_innertube(query, limit=30):
         for sec in sections:
             items = sec.get('itemSectionRenderer', {}).get('contents', [])
             for item in items:
-                v = item.get('videoRenderer')
-                vid = None
-                title = 'YouTube Track'
-                author = 'YouTube Artist'
-                duration = 210
-                img = None
-
-                if v and v.get('videoId'):
-                    vid = v['videoId']
-                    title_runs = v.get('title', {}).get('runs', [])
-                    title_text = v.get('title', {}).get('simpleText') or (title_runs[0].get('text') if title_runs else None)
-                    title = clean_title(title_text or 'YouTube Track')
-                    
-                    author_runs = v.get('ownerText', {}).get('runs', [])
-                    author = author_runs[0].get('text', 'YouTube Artist') if author_runs else 'YouTube Artist'
-
-                    dur_str = v.get('lengthText', {}).get('simpleText', '3:30')
-                    duration = parse_duration_to_seconds(dur_str)
-
-                    thumbs = v.get('thumbnail', {}).get('thumbnails', [])
-                    img = thumbs[-1].get('url') if thumbs else f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"
-                elif 'lockupViewModel' in item:
-                    lvm = item['lockupViewModel']
-                    tap_cmd = lvm.get('rendererContext', {}).get('commandContext', {}).get('onTap', {}).get('innertubeCommand', {})
-                    watch_ep = tap_cmd.get('watchEndpoint', {})
-                    cand_vid = watch_ep.get('videoId')
-                    if not cand_vid:
-                        cand_id = lvm.get('contentId', '')
-                        if cand_id and len(cand_id) == 11 and not cand_id.startswith('RD'):
-                            cand_vid = cand_id
-                    if not cand_vid:
-                        continue
-                    vid = cand_vid
-                    
-                    title_part = lvm.get('metadata', {}).get('lockupMetadataViewModel', {}).get('title', {})
-                    title_val = title_part.get('content') or (title_part.get('runs', [{}])[0].get('text') if title_part.get('runs') else None)
-                    title = clean_title(title_val or 'YouTube Track')
-                    
-                    meta_rows = lvm.get('metadata', {}).get('lockupMetadataViewModel', {}).get('metadata', {}).get('contentMetadataViewModel', {}).get('metadataRows', [])
-                    if meta_rows:
-                        parts = meta_rows[0].get('metadataParts', [])
-                        if parts:
-                            author = parts[0].get('text', {}).get('content', 'YouTube Artist')
-
-                    img = f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"
+                candidates = []
+                if 'shelfRenderer' in item:
+                    shelf_content = item['shelfRenderer'].get('content', {})
+                    if 'verticalListRenderer' in shelf_content:
+                        candidates.extend(shelf_content['verticalListRenderer'].get('items', []))
+                    elif 'horizontalListRenderer' in shelf_content:
+                        candidates.extend(shelf_content['horizontalListRenderer'].get('items', []))
                 else:
-                    continue
+                    candidates.append(item)
 
-                if not vid:
-                    continue
+                for cand in candidates:
+                    v = cand.get('videoRenderer') or cand.get('gridVideoRenderer')
+                    vid = None
+                    title = 'YouTube Track'
+                    author = 'YouTube Artist'
+                    duration = 210
+                    img = None
 
-                audio_url = f"/api/yt/audio?id={vid}"
+                    if v and v.get('videoId'):
+                        vid = v['videoId']
+                        title_runs = v.get('title', {}).get('runs', [])
+                        title_text = v.get('title', {}).get('simpleText') or (title_runs[0].get('text') if title_runs else None)
+                        title = clean_title(title_text or 'YouTube Track')
+                        
+                        author_runs = v.get('ownerText', {}).get('runs', [])
+                        author = author_runs[0].get('text', 'YouTube Artist') if author_runs else 'YouTube Artist'
 
-                results.append({
-                    "id": f"yt_{vid}",
-                    "videoId": vid,
-                    "title": title,
-                    "artist": author,
-                    "album": "YouTube Music",
-                    "duration": duration,
-                    "image": img,
-                    "audioUrl": audio_url,
-                    "source": "YouTube Live",
-                    "hasLyrics": False
-                })
+                        dur_str = v.get('lengthText', {}).get('simpleText', '3:30')
+                        duration = parse_duration_to_seconds(dur_str)
 
+                        thumbs = v.get('thumbnail', {}).get('thumbnails', [])
+                        img = thumbs[-1].get('url') if thumbs else f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"
+                    elif 'lockupViewModel' in cand:
+                        lvm = cand['lockupViewModel']
+                        tap_cmd = lvm.get('rendererContext', {}).get('commandContext', {}).get('onTap', {}).get('innertubeCommand', {})
+                        watch_ep = tap_cmd.get('watchEndpoint', {})
+                        cand_vid = watch_ep.get('videoId')
+                        if not cand_vid:
+                            cand_id = lvm.get('contentId', '')
+                            if cand_id and len(cand_id) == 11 and not cand_id.startswith('RD'):
+                                cand_vid = cand_id
+                        if not cand_vid:
+                            continue
+                        vid = cand_vid
+                        
+                        title_part = lvm.get('metadata', {}).get('lockupMetadataViewModel', {}).get('title', {})
+                        title_val = title_part.get('content') or (title_part.get('runs', [{}])[0].get('text') if title_part.get('runs') else None)
+                        title = clean_title(title_val or 'YouTube Track')
+                        
+                        meta_rows = lvm.get('metadata', {}).get('lockupMetadataViewModel', {}).get('metadata', {}).get('contentMetadataViewModel', {}).get('metadataRows', [])
+                        if meta_rows:
+                            parts = meta_rows[0].get('metadataParts', [])
+                            if parts:
+                                author = parts[0].get('text', {}).get('content', 'YouTube Artist')
+
+                        img = f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"
+                    else:
+                        continue
+
+                    if not vid:
+                        continue
+
+                    audio_url = f"/api/yt/audio?id={vid}"
+
+                    results.append({
+                        "id": f"yt_{vid}",
+                        "videoId": vid,
+                        "title": title,
+                        "artist": author,
+                        "album": "YouTube Music",
+                        "duration": duration,
+                        "image": img,
+                        "audioUrl": audio_url,
+                        "source": "YouTube Live",
+                        "hasLyrics": False
+                    })
+
+                    if len(results) >= limit:
+                        break
                 if len(results) >= limit:
                     break
             if len(results) >= limit:
@@ -475,45 +488,45 @@ def get_youtube_trending():
         if TRENDING_CACHE["data"] and (time.time() - TRENDING_CACHE["ts"] < TRENDING_CACHE_TTL):
             return TRENDING_CACHE["data"]
 
-    results = []
-    for mirror in INVIDIOUS_MIRRORS[:3]:
-        try:
-            url = f"{mirror}/api/v1/trending?type=music"
-            items = None
-            if HTTP_SESSION is not None:
-                resp = HTTP_SESSION.get(url, headers={"User-Agent": "AuraMusic/1.3"}, timeout=2.5)
-                if resp.status_code == 200:
-                    items = resp.json()
-            else:
-                req = urllib.request.Request(url, headers={"User-Agent": "AuraMusic/1.3"})
-                with urllib.request.urlopen(req, timeout=2.5) as response:
-                    if response.status == 200:
-                        items = json.loads(response.read().decode('utf-8'))
-
-            if isinstance(items, list) and len(items) > 0:
-                for item in items[:25]:
-                    vid = item.get('videoId')
-                    if not vid:
-                        continue
-                    results.append({
-                        "id": f"yt_{vid}",
-                        "videoId": vid,
-                        "title": clean_title(item.get('title', 'YouTube Track')),
-                        "artist": item.get('author', 'Trending Artist'),
-                        "album": "Trending Hits",
-                        "duration": int(item.get('lengthSeconds', 180)),
-                        "image": f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg",
-                        "audioUrl": f"/api/yt/audio?id={vid}",
-                        "source": "Trending Hits",
-                        "hasLyrics": False
-                    })
-                break
-        except Exception:
-            continue
+    # Directly use InnerTube trending search for reliable and fast response
+    results = search_youtube_innertube("Trending songs", limit=25) or []
 
     if not results:
-        # Fallback to trending search via innertube
-        results = search_youtube_innertube("Trending songs", limit=25) or []
+        # Fallback to invidious mirrors if innertube fails
+        for mirror in INVIDIOUS_MIRRORS[:3]:
+            try:
+                url = f"{mirror}/api/v1/trending?type=music"
+                items = None
+                if HTTP_SESSION is not None:
+                    resp = HTTP_SESSION.get(url, headers={"User-Agent": "AuraMusic/1.3"}, timeout=2.0)
+                    if resp.status_code == 200:
+                        items = resp.json()
+                else:
+                    req = urllib.request.Request(url, headers={"User-Agent": "AuraMusic/1.3"})
+                    with urllib.request.urlopen(req, timeout=2.0) as response:
+                        if response.status == 200:
+                            items = json.loads(response.read().decode('utf-8'))
+
+                if isinstance(items, list) and len(items) > 0:
+                    for item in items[:25]:
+                        vid = item.get('videoId')
+                        if not vid:
+                            continue
+                        results.append({
+                            "id": f"yt_{vid}",
+                            "videoId": vid,
+                            "title": clean_title(item.get('title', 'YouTube Track')),
+                            "artist": item.get('author', 'Trending Artist'),
+                            "album": "Trending Hits",
+                            "duration": int(item.get('lengthSeconds', 180)),
+                            "image": f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg",
+                            "audioUrl": f"/api/yt/audio?id={vid}",
+                            "source": "Trending Hits",
+                            "hasLyrics": False
+                        })
+                    break
+            except Exception:
+                continue
 
     if results:
         for r in results:
@@ -1197,18 +1210,33 @@ class AuraMusicHandler(SimpleHTTPRequestHandler):
             if not stream_url:
                 self.send_error(503, "Audio stream unavailable")
                 return
+            content_length = None
+            content_type = 'audio/mp4'
+            try:
+                if HTTP_SESSION is not None:
+                    head_res = HTTP_SESSION.head(stream_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=2.0)
+                    if head_res.status_code < 400:
+                        content_length = head_res.headers.get('Content-Length')
+                        content_type = head_res.headers.get('Content-Type', 'audio/mp4')
+                else:
+                    head_req = urllib.request.Request(stream_url, headers={"User-Agent": "Mozilla/5.0"}, method='HEAD')
+                    with urllib.request.urlopen(head_req, timeout=2.0) as resp:
+                        content_length = resp.headers.get('Content-Length')
+                        content_type = resp.headers.get('Content-Type', 'audio/mp4')
+            except Exception:
+                pass
+
             self.send_response(200)
-            self.send_header('Access-Control-Allow-Origin', '*')
-            self.send_header('Access-Control-Allow-Headers', 'Range')
-            self.send_header('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges')
+            self.send_header('Content-Type', content_type)
+            if content_length:
+                self.send_header('Content-Length', content_length)
             self.send_header('Accept-Ranges', 'bytes')
-            self.send_header('Content-Type', 'audio/mp4')
+            self.send_header('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges')
             self.end_headers()
             return
         elif path.startswith('/api/'):
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
-            self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
             return
 
@@ -1352,8 +1380,6 @@ class AuraMusicHandler(SimpleHTTPRequestHandler):
                         self.send_header('Content-Range', remote_stream.headers['Content-Range'])
                     
                     self.send_header('Accept-Ranges', 'bytes')
-                    self.send_header('Access-Control-Allow-Origin', '*')
-                    self.send_header('Access-Control-Allow-Headers', 'Range')
                     self.send_header('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges')
 
                     # If download requested, set attachment header
