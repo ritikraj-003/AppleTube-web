@@ -148,7 +148,7 @@ def resolve_audio(video_id, force_refresh=False):
     try:
         import yt_dlp
         ydl_opts = {
-            'format': 'bestaudio[ext=m4a]/bestaudio/best',
+            'format': 'bestaudio/best',
             'quiet': True,
             'no_warnings': True,
             'extract_flat': False,
@@ -156,7 +156,7 @@ def resolve_audio(video_id, force_refresh=False):
             'nocheckcertificate': True,
             'extractor_args': {
                 'youtube': {
-                    'player_client': ['android_vr', 'tv_embedded', 'web']
+                    'player_client': ['android', 'ios', 'web']
                 }
             }
         }
