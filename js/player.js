@@ -329,70 +329,168 @@ class AudioPlayer {
     });
 
     this.audio.addEventListener('error', (e) => {
-      console.warn('Native HTMLAudioElement playback error encountered:', e);
-      this.handleAudioPlaybackError();
+      // Ignore if fetch was simply aborted because a new track was loaded
+      if (this.audio.error && this.audio.error.code === 1) {
+        return;
+      }
+      console.warn('Native HTMLAudioElement playback error encountered:', e, this.audio.error);
+      this.handleAudioPlaybackError(this.audio.error ? `Error code ${this.audio.error.code}: ${this.audio.error.message || 'Media error'}` : 'Audio error event');
     });
   }
 
-  async handleAudioPlaybackError() {
+  logPlaybackDebug(resultOrStatus = 'success') {
+    const t = this.currentTrack;
+    if (!t) return;
+    const err = this.audio.error;
+    const errStr = err ? `Code ${err.code} (${err.message || 'MediaError'})` : 'none';
+    console.log(
+      `[PLAYBACK DEBUG]\n` +
+      `Song ID: ${t.id || t.videoId || 'unknown'}\n` +
+      `Song title: ${t.title || 'unknown'}\n` +
+      `Resolved audio URL: ${this.audio.currentSrc || this.audio.src || t.audioUrl || 'none'}\n` +
+      `Audio source selected: ${t.source || (t.videoId ? 'YouTube Live Proxy' : 'Direct Audio Stream')}\n` +
+      `HTTP/network status: networkState=${this.audio.networkState}\n` +
+      `HTMLAudioElement readyState: ${this.audio.readyState}\n` +
+      `HTMLAudioElement error: ${errStr}\n` +
+      `play() result/error: ${resultOrStatus}`
+    );
+  }
+
+  async tryLoadAndPlaySource(candidateUrl) {
+    if (!candidateUrl) return false;
+    try {
+      this.audio.pause();
+    } catch (e) {}
+
+    this.audio.src = candidateUrl;
+    this.audio.load();
+
+    try {
+      const p = this.audio.play();
+      if (p !== undefined) {
+        await p;
+      }
+      this.notify('playbackChange', true);
+      this.updateMediaSessionPlaybackState('playing');
+      return true;
+    } catch (err) {
+      if (err.name === 'NotAllowedError') {
+        // Autoplay policy prevented playback, but the source was loaded and ready!
+        this.notify('playbackChange', false);
+        this.updateMediaSessionPlaybackState('paused');
+        return true;
+      }
+      return false;
+    }
+  }
+
+  async handleAudioPlaybackError(errorDetail = null) {
     const track = this.currentTrack;
     if (!track) {
       this.notify('playbackChange', false);
       return;
     }
 
-    // Auto-detect videoId if missing
-    if (!track.videoId) {
-      if (track.id && String(track.id).startsWith('yt_')) {
-        track.videoId = String(track.id).replace('yt_', '');
-      } else if (track.id && /^[a-zA-Z0-9_-]{11}$/.test(String(track.id))) {
-        track.videoId = String(track.id);
-      }
+    if (this.audio.error && this.audio.error.code === 1) {
+      return;
     }
 
-    // Attempt direct audio mirror fallback if retry count allows
-    if (track.videoId && this.streamRetryCount === 0) {
-      this.streamRetryCount++;
-      console.info(`Attempting fallback direct audio stream for ${track.title} (${track.videoId})...`);
-      
-      const fallbackMirrors = [
-        `https://invidious.protokolla.fi/api/v1/videos/${track.videoId}`,
-        `https://pipedapi.adminforge.de/streams/${track.videoId}`
-      ];
+    if (this.isHandlingPlaybackError) return;
+    this.isHandlingPlaybackError = true;
 
-      for (const mirrorUrl of fallbackMirrors) {
-        try {
-          const res = await fetch(mirrorUrl, { signal: AbortSignal.timeout(4000) });
-          if (res.ok) {
-            const data = await res.json();
-            let streamUrl = null;
-            if (Array.isArray(data.adaptiveFormats)) {
-              const audioFmt = data.adaptiveFormats.find(f => (f.type || f.mimeType || '').startsWith('audio/') && f.url);
-              if (audioFmt) streamUrl = audioFmt.url;
-            } else if (Array.isArray(data.audioStreams)) {
-              if (data.audioStreams[0]?.url) streamUrl = data.audioStreams[0].url;
-            }
-
-            if (streamUrl) {
-              console.info('Found valid fallback direct audio stream');
-              this.audio.src = streamUrl;
-              this.audio.load();
-              await this.audio.play();
-              return;
-            }
-          }
-        } catch (err) {
-          // Continue to next mirror or failure handling
+    try {
+      // Auto-detect videoId if missing
+      if (!track.videoId) {
+        if (track.id && String(track.id).startsWith('yt_')) {
+          track.videoId = String(track.id).replace('yt_', '');
+        } else if (track.id && /^[a-zA-Z0-9_-]{11}$/.test(String(track.id))) {
+          track.videoId = String(track.id);
         }
       }
-    }
 
-    // If all direct stream methods failed, show clean error without skipping track
-    console.warn(`Direct audio stream unavailable for: ${track.title}`);
-    UIManager.showToast(`Audio unavailable for "${track.title}"`, 'warning');
-    this.notify('playbackChange', false);
-    this.updateMediaSessionPlaybackState('paused');
-    // Note: NEVER automatically advance to the next track on playback error.
+      console.warn(`[AudioPlayer] Playback issue for "${track.title}". Starting recovery sequence...`);
+
+      // Recovery Step 1: Force backend cache refresh for YouTube streams
+      if (track.videoId && this.streamRetryCount < 1) {
+        this.streamRetryCount++;
+        const refreshUrl = `/api/yt/audio?id=${track.videoId}&retry=1`;
+        console.info(`[AudioPlayer] Retrying via backend refresh: ${refreshUrl}`);
+        const success = await this.tryLoadAndPlaySource(refreshUrl);
+        if (success) {
+          track.audioUrl = refreshUrl;
+          this.logPlaybackDebug('Recovered via backend refresh');
+          return;
+        }
+      }
+
+      // Recovery Step 2: Query public Invidious / Piped mirrors for direct stream
+      if (track.videoId) {
+        const fallbackMirrors = [
+          `https://invidious.protokolla.fi/api/v1/videos/${track.videoId}`,
+          `https://pipedapi.adminforge.de/streams/${track.videoId}`
+        ];
+
+        for (const mirrorUrl of fallbackMirrors) {
+          try {
+            const res = await fetch(mirrorUrl, { signal: AbortSignal.timeout(4000) });
+            if (res.ok) {
+              const data = await res.json();
+              let streamUrl = null;
+              if (Array.isArray(data.adaptiveFormats)) {
+                const audioFmt = data.adaptiveFormats.find(f => (f.type || f.mimeType || '').startsWith('audio/') && f.url);
+                if (audioFmt) streamUrl = audioFmt.url;
+              } else if (Array.isArray(data.audioStreams)) {
+                if (data.audioStreams[0]?.url) streamUrl = data.audioStreams[0].url;
+              }
+
+              if (streamUrl) {
+                console.info(`[AudioPlayer] Found mirror stream: ${mirrorUrl}`);
+                const success = await this.tryLoadAndPlaySource(streamUrl);
+                if (success) {
+                  track.audioUrl = streamUrl;
+                  this.logPlaybackDebug(`Recovered via mirror: ${mirrorUrl}`);
+                  return;
+                }
+              }
+            }
+          } catch (err) {}
+        }
+      }
+
+      // Recovery Step 3: If no videoId or third-party stream failed, resolve via YouTube catalog search
+      if (!track.videoId && track.title) {
+        try {
+          const searchQ = `${track.title} ${track.artist || ''}`.trim();
+          console.info(`[AudioPlayer] Resolving YouTube catalog match for "${searchQ}"...`);
+          const searchRes = await fetch(`/api/yt/search?q=${encodeURIComponent(searchQ)}&limit=1`, {
+            signal: AbortSignal.timeout(5000)
+          });
+          if (searchRes.ok) {
+            const items = await searchRes.json();
+            if (Array.isArray(items) && items.length > 0 && items[0].videoId) {
+              track.videoId = items[0].videoId;
+              const ytAudioUrl = `/api/yt/audio?id=${items[0].videoId}`;
+              const success = await this.tryLoadAndPlaySource(ytAudioUrl);
+              if (success) {
+                track.audioUrl = ytAudioUrl;
+                this.logPlaybackDebug('Recovered via YouTube catalog search');
+                return;
+              }
+            }
+          }
+        } catch (err) {}
+      }
+
+      // If all recovery methods failed, show clean warning without skipping track
+      console.warn(`[AudioPlayer] Direct audio stream unavailable for: ${track.title}`);
+      this.logPlaybackDebug(errorDetail || 'All recovery attempts exhausted');
+      UIManager.showToast(`Audio unavailable for "${track.title}"`, 'warning');
+      this.notify('playbackChange', false);
+      this.updateMediaSessionPlaybackState('paused');
+      // Note: NEVER automatically advance to the next track on playback error.
+    } finally {
+      this.isHandlingPlaybackError = false;
+    }
   }
 
   // --- Track Ended Handler ---
@@ -821,7 +919,7 @@ class AudioPlayer {
 
     // Normalize metadata before recording the event so profile and ranking agree.
     this.currentTrack.vibeMetadata = api.extractVibe(this.currentTrack);
-    this.currentTrack.language = this.currentTrack.vibeMetadata.language;
+    this.currentTrack.language = this.currentTrack.vibeMetadata?.language || 'en';
     this.sessionHistory = [this.currentTrack, ...this.sessionHistory.filter(item => item.id !== this.currentTrack.id)].slice(0, 20);
     StorageManager.recordPlaybackEvent(this.currentTrack, 'play');
 
@@ -839,8 +937,17 @@ class AudioPlayer {
       this.currentTrack.audioUrl = `/api/yt/audio?id=${this.currentTrack.videoId}`;
     }
 
-    this.audio.src = this.currentTrack.audioUrl;
-    this.audio.load();
+    // Reset audio element state cleanly before loading new song
+    try {
+      this.audio.pause();
+    } catch (e) {}
+
+    const targetUrl = this.currentTrack.audioUrl;
+    if (targetUrl) {
+      this.audio.src = targetUrl;
+      this.audio.load();
+    }
+
     try {
       this.audio.playbackRate = this.playbackRate || 1.0;
       this.audio.defaultPlaybackRate = this.playbackRate || 1.0;
@@ -859,24 +966,38 @@ class AudioPlayer {
 
     StorageManager.addRecentTrack(this.currentTrack);
 
-    // Primary audio engine: play via native HTML5 <audio> for uninterrupted background playback
+    if (!targetUrl) {
+      console.warn('[AudioPlayer] No audioUrl resolved for track, initiating fallback resolution...');
+      this.handleAudioPlaybackError('No audioUrl available on track');
+      return;
+    }
+
+    // Primary audio engine: play via native HTML5 <audio>
     const playPromise = this.audio.play();
     if (playPromise !== undefined) {
-      playPromise.catch(err => {
-        if (err.name === 'AbortError') {
-          // Play was superseded by a new track or load operation
-          return;
-        }
-        if (err.name === 'NotAllowedError') {
-          // Autoplay policy prevented automatic playback; pause UI and wait for user play tap
-          console.warn('[AudioPlayer] Playback not allowed by autoplay policy:', err);
-          this.notify('playbackChange', false);
-          this.updateMediaSessionPlaybackState('paused');
-          return;
-        }
-        console.warn('Native HTMLAudio play promise rejected:', err);
-        this.handleAudioPlaybackError();
-      });
+      playPromise
+        .then(() => {
+          this.logPlaybackDebug('Playback started successfully');
+          this.notify('playbackChange', true);
+          this.updateMediaSessionPlaybackState('playing');
+        })
+        .catch(err => {
+          if (err.name === 'AbortError') {
+            // Play was superseded by a new track or load operation
+            return;
+          }
+          if (err.name === 'NotAllowedError') {
+            // Autoplay policy prevented automatic playback; pause UI and wait for user play tap
+            console.warn('[AudioPlayer] Playback not allowed by autoplay policy:', err);
+            this.logPlaybackDebug(`Autoplay blocked: ${err.message}`);
+            this.notify('playbackChange', false);
+            this.updateMediaSessionPlaybackState('paused');
+            return;
+          }
+          console.warn('[AudioPlayer] Native HTMLAudio play promise rejected:', err);
+          this.logPlaybackDebug(`play() rejected: ${err.name} - ${err.message}`);
+          this.handleAudioPlaybackError(err.message);
+        });
     }
   }
 
@@ -894,11 +1015,18 @@ class AudioPlayer {
     this.initAudioContext();
 
     if (this.audio.paused) {
-      this.audio.play().catch(err => {
-        if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') {
-          this.handleAudioPlaybackError();
-        }
-      });
+      this.audio.play()
+        .then(() => {
+          this.logPlaybackDebug('Toggled to play');
+          this.notify('playbackChange', true);
+          this.updateMediaSessionPlaybackState('playing');
+        })
+        .catch(err => {
+          if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') {
+            this.logPlaybackDebug(`togglePlay play() rejected: ${err.name}`);
+            this.handleAudioPlaybackError(err.message);
+          }
+        });
     } else {
       this.audio.pause();
     }
@@ -918,11 +1046,16 @@ class AudioPlayer {
       this.notify('playbackChange', true);
       this.updateMediaSessionPlaybackState('playing');
       this.requestWakeLock();
-      this.audio.play().catch(err => {
-        if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') {
-          this.handleAudioPlaybackError();
-        }
-      });
+      this.audio.play()
+        .then(() => {
+          this.logPlaybackDebug('Resumed successfully');
+        })
+        .catch(err => {
+          if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') {
+            this.logPlaybackDebug(`resume play() rejected: ${err.name}`);
+            this.handleAudioPlaybackError(err.message);
+          }
+        });
     }
   }
 

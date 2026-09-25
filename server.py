@@ -717,11 +717,13 @@ def get_youtube_related(video_id=None, mood=None, current_title="", artist="", l
     return final_results[:limit]
 
 
-def resolve_youtube_audio_stream(video_id):
+def resolve_youtube_audio_stream(video_id, force_refresh=False):
     if not video_id:
         return None
 
-    if video_id in AUDIO_URL_CACHE:
+    if force_refresh:
+        AUDIO_URL_CACHE.pop(video_id, None)
+    elif video_id in AUDIO_URL_CACHE:
         entry = AUDIO_URL_CACHE[video_id]
         if isinstance(entry, tuple) and len(entry) == 2:
             url, ts = entry
@@ -740,7 +742,8 @@ def resolve_youtube_audio_stream(video_id):
             'quiet': True,
             'no_warnings': True,
             'extract_flat': False,
-            'socket_timeout': 8
+            'socket_timeout': 10,
+            'nocheckcertificate': True
         }
         if node_path and os.path.exists(node_path):
             ydl_opts['js_runtimes'] = {'node': {'path': node_path}}
@@ -1349,52 +1352,72 @@ class AuraMusicHandler(SimpleHTTPRequestHandler):
             is_download = params.get('download', ['0'])[0] == '1'
             title = params.get('title', ['track'])[0]
             artist = params.get('artist', ['artist'])[0]
+            force_refresh = params.get('retry', ['0'])[0] == '1'
 
             if not video_id:
                 self.send_error(400, "Missing video id parameter")
                 return
 
-            stream_url = resolve_youtube_audio_stream(video_id)
+            stream_url = resolve_youtube_audio_stream(video_id, force_refresh=force_refresh)
             if not stream_url:
                 self.send_json_response({"error": "Audio stream unavailable for this track"}, status=503)
                 return
 
-            try:
+            def stream_data(target_url, attempt=1):
                 headers = {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
                 }
                 if 'Range' in self.headers and not is_download:
                     headers['Range'] = self.headers['Range']
 
-                proxy_req = urllib.request.Request(stream_url, headers=headers)
-                with urllib.request.urlopen(proxy_req, timeout=12) as remote_stream:
-                    status_code = remote_stream.status
-                    self.send_response(status_code)
-                    
-                    content_type = remote_stream.headers.get('Content-Type', 'audio/mp4')
-                    self.send_header('Content-Type', content_type)
-                    
-                    if 'Content-Length' in remote_stream.headers:
-                        self.send_header('Content-Length', remote_stream.headers['Content-Length'])
-                    if 'Content-Range' in remote_stream.headers and not is_download:
-                        self.send_header('Content-Range', remote_stream.headers['Content-Range'])
-                    
-                    self.send_header('Accept-Ranges', 'bytes')
-                    self.send_header('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges')
+                proxy_req = urllib.request.Request(target_url, headers=headers)
+                try:
+                    with urllib.request.urlopen(proxy_req, timeout=12) as remote_stream:
+                        status_code = remote_stream.status
+                        self.send_response(status_code)
+                        
+                        raw_content_type = remote_stream.headers.get('Content-Type', '')
+                        if 'm3u8' in target_url or 'hls' in target_url:
+                            content_type = 'application/vnd.apple.mpegurl'
+                        elif raw_content_type:
+                            content_type = raw_content_type
+                        else:
+                            content_type = 'audio/mp4'
 
-                    # If download requested, set attachment header
-                    if is_download:
-                        safe_filename = sanitize_filename(f"{artist} - {title}.m4a")
-                        self.send_header('Content-Disposition', f'attachment; filename="{safe_filename}"')
+                        self.send_header('Content-Type', content_type)
+                        
+                        if 'Content-Length' in remote_stream.headers:
+                            self.send_header('Content-Length', remote_stream.headers['Content-Length'])
+                        if 'Content-Range' in remote_stream.headers and not is_download:
+                            self.send_header('Content-Range', remote_stream.headers['Content-Range'])
+                        
+                        self.send_header('Accept-Ranges', 'bytes')
+                        self.send_header('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges')
 
-                    self.end_headers()
+                        # If download requested, set attachment header
+                        if is_download:
+                            safe_filename = sanitize_filename(f"{artist} - {title}.m4a")
+                            self.send_header('Content-Disposition', f'attachment; filename="{safe_filename}"')
 
-                    # Stream audio in 64KB chunks
-                    while True:
-                        chunk = remote_stream.read(64 * 1024)
-                        if not chunk:
-                            break
-                        self.wfile.write(chunk)
+                        self.end_headers()
+
+                        # Stream audio in 64KB chunks
+                        while True:
+                            chunk = remote_stream.read(64 * 1024)
+                            if not chunk:
+                                break
+                            self.wfile.write(chunk)
+                except urllib.error.HTTPError as http_err:
+                    if http_err.code in (403, 410) and attempt == 1:
+                        print(f"[Audio Stream Expired/403 for {video_id}], refreshing cache...", file=sys.stderr)
+                        AUDIO_URL_CACHE.pop(video_id, None)
+                        fresh_url = resolve_youtube_audio_stream(video_id, force_refresh=True)
+                        if fresh_url and fresh_url != target_url:
+                            return stream_data(fresh_url, attempt=2)
+                    raise
+
+            try:
+                stream_data(stream_url)
             except (BrokenPipeError, ConnectionResetError):
                 pass
             except Exception as err:

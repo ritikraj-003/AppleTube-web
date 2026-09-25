@@ -361,17 +361,17 @@ class MusicAPI {
         if (!res.ok) continue;
 
         const json = await res.json();
-        const items = json?.data?.results || json?.results || (Array.isArray(json?.data) ? json.data : null);
+        const items = Array.isArray(json) ? json : (json?.data?.results || json?.results || (Array.isArray(json?.data) ? json.data : null));
         if (Array.isArray(items) && items.length > 0) {
           this.saavnMirrorIndex = (this.saavnMirrorIndex + i) % CONFIG.SAAVN_API_MIRRORS.length;
           return items.map(item => {
-            const audioUrl = this.getBestAudioUrl(item.downloadUrl, item.media_url, item.media_preview_url);
+            const audioUrl = this.getBestAudioUrl(item.downloadUrl || item.url, item.media_url, item.media_preview_url || item.preview);
             return {
               id: 'saavn_' + (item.id || Math.random().toString(36).substr(2, 9)),
               rawId: item.id,
               title: this.decodeHtml(item.name || item.title || item.song),
               artist: this.decodeHtml(item.primaryArtists || item.singers || item.artist || 'Aura Music'),
-              album: this.decodeHtml(item.album?.name || item.album || ''),
+              album: this.decodeHtml(item.album?.name || (typeof item.album === 'string' ? item.album : '')),
               duration: parseInt(item.duration, 10) || 180,
               image: this.getBestImageUrl(item.image),
               audioUrl: audioUrl,
