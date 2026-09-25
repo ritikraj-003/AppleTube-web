@@ -270,21 +270,55 @@ def search_youtube_innertube(query, limit=30):
             items = sec.get('itemSectionRenderer', {}).get('contents', [])
             for item in items:
                 v = item.get('videoRenderer')
-                if not v or not v.get('videoId'):
+                vid = None
+                title = 'YouTube Track'
+                author = 'YouTube Artist'
+                duration = 210
+                img = None
+
+                if v and v.get('videoId'):
+                    vid = v['videoId']
+                    title_runs = v.get('title', {}).get('runs', [])
+                    title_text = v.get('title', {}).get('simpleText') or (title_runs[0].get('text') if title_runs else None)
+                    title = clean_title(title_text or 'YouTube Track')
+                    
+                    author_runs = v.get('ownerText', {}).get('runs', [])
+                    author = author_runs[0].get('text', 'YouTube Artist') if author_runs else 'YouTube Artist'
+
+                    dur_str = v.get('lengthText', {}).get('simpleText', '3:30')
+                    duration = parse_duration_to_seconds(dur_str)
+
+                    thumbs = v.get('thumbnail', {}).get('thumbnails', [])
+                    img = thumbs[-1].get('url') if thumbs else f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"
+                elif 'lockupViewModel' in item:
+                    lvm = item['lockupViewModel']
+                    tap_cmd = lvm.get('rendererContext', {}).get('commandContext', {}).get('onTap', {}).get('innertubeCommand', {})
+                    watch_ep = tap_cmd.get('watchEndpoint', {})
+                    cand_vid = watch_ep.get('videoId')
+                    if not cand_vid:
+                        cand_id = lvm.get('contentId', '')
+                        if cand_id and len(cand_id) == 11 and not cand_id.startswith('RD'):
+                            cand_vid = cand_id
+                    if not cand_vid:
+                        continue
+                    vid = cand_vid
+                    
+                    title_part = lvm.get('metadata', {}).get('lockupMetadataViewModel', {}).get('title', {})
+                    title_val = title_part.get('content') or (title_part.get('runs', [{}])[0].get('text') if title_part.get('runs') else None)
+                    title = clean_title(title_val or 'YouTube Track')
+                    
+                    meta_rows = lvm.get('metadata', {}).get('lockupMetadataViewModel', {}).get('metadata', {}).get('contentMetadataViewModel', {}).get('metadataRows', [])
+                    if meta_rows:
+                        parts = meta_rows[0].get('metadataParts', [])
+                        if parts:
+                            author = parts[0].get('text', {}).get('content', 'YouTube Artist')
+
+                    img = f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"
+                else:
                     continue
 
-                vid = v['videoId']
-                title_runs = v.get('title', {}).get('runs', [])
-                title = clean_title(title_runs[0].get('text', 'YouTube Track') if title_runs else 'YouTube Track')
-                
-                author_runs = v.get('ownerText', {}).get('runs', [])
-                author = author_runs[0].get('text', 'YouTube Artist') if author_runs else 'YouTube Artist'
-
-                dur_str = v.get('lengthText', {}).get('simpleText', '3:30')
-                duration = parse_duration_to_seconds(dur_str)
-
-                thumbs = v.get('thumbnail', {}).get('thumbnails', [])
-                img = thumbs[-1].get('url') if thumbs else f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"
+                if not vid:
+                    continue
 
                 audio_url = f"/api/yt/audio?id={vid}"
 

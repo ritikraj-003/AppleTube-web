@@ -74,16 +74,16 @@ class MusicAPI {
 
   // --- Live Backend Health Detector ---
   async checkLiveBackend() {
-    if (this.hasLiveBackend !== null) return this.hasLiveBackend;
+    if (this.hasLiveBackend === true) return true;
     try {
-      const res = await fetch('/api/status', { signal: AbortSignal.timeout(1500) });
+      const res = await fetch('/api/status', { signal: AbortSignal.timeout(4000) });
       if (res.ok) {
         const data = await res.json();
         this.hasLiveBackend = data?.status === 'online';
         return this.hasLiveBackend;
       }
     } catch (e) {
-      this.hasLiveBackend = false;
+      // Do not permanently latch hasLiveBackend to false on a single transient timeout
     }
     return false;
   }
@@ -92,14 +92,16 @@ class MusicAPI {
   async searchYouTube(query, limit = 30) {
     // 1A. Try local live server backend first (InnerTube live database)
     const isLive = await this.checkLiveBackend();
-    if (isLive) {
+    const shouldTryBackend = isLive || this.hasLiveBackend !== false || (typeof window !== 'undefined' && Boolean(window.location?.origin));
+    if (shouldTryBackend) {
       try {
         const res = await fetch(`/api/yt/search?q=${encodeURIComponent(query)}&limit=${limit}`, {
-          signal: AbortSignal.timeout(6000)
+          signal: AbortSignal.timeout(8000)
         });
         if (res.ok) {
           const items = await res.json();
           if (Array.isArray(items) && items.length > 0) {
+            this.hasLiveBackend = true;
             return items;
           }
         }
@@ -166,7 +168,7 @@ class MusicAPI {
     // Attempt to enhance with live backend suggestions
     try {
       const res = await fetch(`/api/yt/suggestions?q=${encodeURIComponent(trimmed)}&limit=${limit}`, {
-        signal: AbortSignal.timeout(2800)
+        signal: AbortSignal.timeout(4000)
       });
       if (res.ok) {
         const data = await res.json();

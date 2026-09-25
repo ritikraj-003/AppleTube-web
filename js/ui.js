@@ -17,6 +17,10 @@ export class UIManager {
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   }
 
+  static formatDuration(seconds) {
+    return this.formatTime(seconds);
+  }
+
   static formatTimelineTime(seconds) {
     if (!seconds || isNaN(seconds) || seconds < 0) return '00:00';
     const totalSecs = Math.floor(seconds);

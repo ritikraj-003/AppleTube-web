@@ -1929,7 +1929,7 @@ class App {
               <img class="sugg-song-thumb" src="${song.image || 'assets/default-cover.svg'}" alt="" loading="lazy" />
               <div class="sugg-song-meta">
                 <div class="sugg-song-title">${UIManager.escapeHtml(song.title)}</div>
-                <div class="sugg-song-artist">${UIManager.escapeHtml(song.artist)} • ${UIManager.formatDuration(song.duration || 180)}</div>
+                <div class="sugg-song-artist">${UIManager.escapeHtml(song.artist)} • ${UIManager.formatDuration ? UIManager.formatDuration(song.duration || 180) : UIManager.formatTime(song.duration || 180)}</div>
               </div>
               <button class="sugg-play-btn" title="Play Now" aria-label="Play song">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
