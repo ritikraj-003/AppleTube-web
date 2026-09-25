@@ -126,7 +126,10 @@ import time
 
 AUDIO_URL_CACHE = {}
 
+LAST_RESOLVE_ERROR = None
+
 def resolve_audio(video_id, force_refresh=False):
+    global LAST_RESOLVE_ERROR
     if not video_id:
         return None
 
@@ -159,6 +162,7 @@ def resolve_audio(video_id, force_refresh=False):
                 AUDIO_URL_CACHE[video_id] = (stream_url, time.time())
                 return stream_url
     except Exception as e:
+        LAST_RESOLVE_ERROR = f"yt-dlp: {type(e).__name__}: {e}"
         print(f"[api/_youtube yt-dlp error for {video_id}]: {e}")
 
     # Method 2: Active Piped / Invidious fallback

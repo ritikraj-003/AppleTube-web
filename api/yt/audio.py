@@ -1,3 +1,4 @@
+import json
 import urllib.request
 import urllib.error
 from http.server import BaseHTTPRequestHandler
@@ -17,7 +18,16 @@ class handler(BaseHTTPRequestHandler):
 
         stream_url = resolve_audio(video_id, force_refresh=force_refresh)
         if not stream_url or not stream_url.startswith("https://"):
-            self.send_error(503, "Audio stream is temporarily unavailable")
+            try:
+                from api._youtube import LAST_RESOLVE_ERROR
+                detail = LAST_RESOLVE_ERROR or "No playable audio stream could be resolved"
+            except Exception:
+                detail = "Could not resolve stream URL"
+            self.send_response(503)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Audio stream unavailable", "detail": detail}).encode("utf-8"))
             return
 
         def stream_data(target_url, attempt=1):
