@@ -125,6 +125,7 @@ def search(query, limit=25):
 import time
 
 AUDIO_URL_CACHE = {}
+AUDIO_HEADERS_CACHE = {}
 
 LAST_RESOLVE_ERROR = None
 
@@ -135,6 +136,7 @@ def resolve_audio(video_id, force_refresh=False):
 
     if force_refresh:
         AUDIO_URL_CACHE.pop(video_id, None)
+        AUDIO_HEADERS_CACHE.pop(video_id, None)
     elif video_id in AUDIO_URL_CACHE:
         entry = AUDIO_URL_CACHE[video_id]
         if isinstance(entry, tuple) and len(entry) == 2:
@@ -156,8 +158,7 @@ def resolve_audio(video_id, force_refresh=False):
             'nocheckcertificate': True,
             'extractor_args': {
                 'youtube': {
-                    'player_client': ['android'],
-                    'player_skip': ['webpage', 'configs', 'initial_data']
+                    'player_client': ['tv_embedded', 'android_music', 'ios_music', 'android']
                 }
             }
         }
@@ -166,6 +167,7 @@ def resolve_audio(video_id, force_refresh=False):
             stream_url = info.get('url')
             if stream_url:
                 AUDIO_URL_CACHE[video_id] = (stream_url, time.time())
+                AUDIO_HEADERS_CACHE[video_id] = info.get('http_headers', {})
                 return stream_url
     except Exception as e:
         LAST_RESOLVE_ERROR = f"yt-dlp: {type(e).__name__}: {e}"

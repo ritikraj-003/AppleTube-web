@@ -48,6 +48,7 @@ if not os.path.exists(DATA_DIR):
 
 # Cache resolved audio URLs in memory to make repeat & scrubbing instant
 AUDIO_URL_CACHE = {}
+AUDIO_HEADERS_CACHE = {}
 
 # Active login sessions: token -> user_id
 ACTIVE_SESSIONS = {}
@@ -723,6 +724,7 @@ def resolve_youtube_audio_stream(video_id, force_refresh=False):
 
     if force_refresh:
         AUDIO_URL_CACHE.pop(video_id, None)
+        AUDIO_HEADERS_CACHE.pop(video_id, None)
     elif video_id in AUDIO_URL_CACHE:
         entry = AUDIO_URL_CACHE[video_id]
         if isinstance(entry, tuple) and len(entry) == 2:
@@ -764,7 +766,7 @@ def resolve_youtube_audio_stream(video_id, force_refresh=False):
             import shutil
             node_path = shutil.which('node') or ('/opt/homebrew/bin/node' if os.path.exists('/opt/homebrew/bin/node') else None)
             ydl_opts = {
-                'format': 'bestaudio[ext=m4a]/bestaudio/best',
+                'format': 'bestaudio/best',
                 'quiet': True,
                 'no_warnings': True,
                 'extract_flat': False,
@@ -772,7 +774,7 @@ def resolve_youtube_audio_stream(video_id, force_refresh=False):
                 'nocheckcertificate': True,
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['android_vr', 'tv_embedded', 'web']
+                        'player_client': ['tv_embedded', 'android_music', 'ios_music', 'android']
                     }
                 }
             }
@@ -784,6 +786,7 @@ def resolve_youtube_audio_stream(video_id, force_refresh=False):
                 stream_url = info.get('url')
                 if stream_url:
                     AUDIO_URL_CACHE[video_id] = (stream_url, time.time())
+                    AUDIO_HEADERS_CACHE[video_id] = info.get('http_headers', {})
                     return stream_url
         except Exception as e:
             print(f"[yt-dlp module resolution error for {video_id}]: {e}", file=sys.stderr)
@@ -799,9 +802,10 @@ def resolve_youtube_audio_stream(video_id, force_refresh=False):
             cmd = [
                 yt_cli,
                 '-g',
-                '-f', 'bestaudio[ext=m4a]/bestaudio/best',
+                '-f', 'bestaudio/best',
                 '--socket-timeout', '10',
-                '--no-check-certificate'
+                '--no-check-certificate',
+                '--extractor-args', 'youtube:player_client=tv_embedded,android_music,ios_music,android'
             ]
             if node_path and os.path.exists(node_path):
                 cmd.extend(['--js-runtimes', f'node:{node_path}'])
@@ -1361,7 +1365,8 @@ class AuraMusicHandler(SimpleHTTPRequestHandler):
                 return
 
             def stream_data(target_url, attempt=1):
-                headers = {
+                cached_headers = AUDIO_HEADERS_CACHE.get(video_id, {})
+                headers = dict(cached_headers) if cached_headers else {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
                 }
                 if 'Range' in self.headers and not is_download:
@@ -1408,16 +1413,18 @@ class AuraMusicHandler(SimpleHTTPRequestHandler):
                     if attempt == 1 and http_err.code in (403, 410, 404):
                         print(f"[Audio Stream Expired/{http_err.code} for {video_id}], refreshing cache...", file=sys.stderr)
                         AUDIO_URL_CACHE.pop(video_id, None)
+                        AUDIO_HEADERS_CACHE.pop(video_id, None)
                         fresh_url = resolve_youtube_audio_stream(video_id, force_refresh=True)
-                        if fresh_url and fresh_url != target_url:
+                        if fresh_url:
                             return stream_data(fresh_url, attempt=2)
                     raise
                 except Exception as e:
                     if attempt == 1:
                         print(f"[Audio Stream connect error for {video_id}]: {e}, trying fresh stream...", file=sys.stderr)
                         AUDIO_URL_CACHE.pop(video_id, None)
+                        AUDIO_HEADERS_CACHE.pop(video_id, None)
                         fresh_url = resolve_youtube_audio_stream(video_id, force_refresh=True)
-                        if fresh_url and fresh_url != target_url:
+                        if fresh_url:
                             return stream_data(fresh_url, attempt=2)
                     raise
 

@@ -3,7 +3,7 @@ import urllib.request
 import urllib.error
 from http.server import BaseHTTPRequestHandler
 
-from api._youtube import query_params, resolve_audio
+from api._youtube import query_params, resolve_audio, AUDIO_HEADERS_CACHE
 
 
 class handler(BaseHTTPRequestHandler):
@@ -31,7 +31,8 @@ class handler(BaseHTTPRequestHandler):
             return
 
         def stream_data(target_url, attempt=1):
-            headers = {
+            cached_headers = AUDIO_HEADERS_CACHE.get(video_id, {})
+            headers = dict(cached_headers) if cached_headers else {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
             }
             if "Range" in self.headers:
