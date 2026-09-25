@@ -1,4 +1,4 @@
-const CACHE_NAME = 'appletube-v19';
+const CACHE_NAME = 'appletube-v20';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -16,7 +16,9 @@ const ASSETS_TO_CACHE = [
   './js/app.js',
   './js/colorExtractor.js',
   './assets/logo.svg',
-  './assets/default-cover.svg'
+  './assets/logo.png',
+  './assets/default-cover.svg',
+  './assets/default-cover.png'
 ];
 
 self.addEventListener('install', (event) => {

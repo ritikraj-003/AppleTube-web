@@ -2552,14 +2552,18 @@ class App {
     if (this.dom.fullscreenTimeTotal && initialDur !== '00:00') {
       this.dom.fullscreenTimeTotal.textContent = initialDur;
     }
-    if (this.dom.fullscreenTimeCurrent) {
-      this.dom.fullscreenTimeCurrent.textContent = '00:00';
-    }
     if (this.dom.timeTotal && initialDur !== '00:00') {
       this.dom.timeTotal.textContent = initialDur;
     }
-    if (this.dom.timeCurrent) {
-      this.dom.timeCurrent.textContent = '00:00';
+
+    if (this.currentRenderedTrackId !== track.id) {
+      this.currentRenderedTrackId = track.id;
+      if (this.dom.fullscreenTimeCurrent) {
+        this.dom.fullscreenTimeCurrent.textContent = '00:00';
+      }
+      if (this.dom.timeCurrent) {
+        this.dom.timeCurrent.textContent = '00:00';
+      }
     }
 
     document.querySelectorAll('.music-card, .track-row').forEach(el => {
@@ -2655,12 +2659,18 @@ class App {
 
   // --- Lyrics Handler ---
   async fetchAndDisplayLyrics(track) {
+    if (!track) return;
+    if (this.currentLyricsTrackId === track.id) return;
+    this.currentLyricsTrackId = track.id;
+
     this.dom.lyricsTitle.textContent = track.title;
     this.dom.lyricsArtist.textContent = track.artist;
     this.dom.lyricsContent.innerHTML = '<div class="spinner" style="margin: 40px auto;"></div>';
 
     const lyricsText = await api.getLyrics(track);
-    this.activeLyricsLines = UIManager.renderLyrics(this.dom.lyricsContent, lyricsText);
+    if (this.currentLyricsTrackId === track.id) {
+      this.activeLyricsLines = UIManager.renderLyrics(this.dom.lyricsContent, lyricsText);
+    }
   }
 
   syncLyrics(currentTime) {
