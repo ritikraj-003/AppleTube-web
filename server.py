@@ -671,6 +671,9 @@ def get_youtube_related(video_id=None, mood=None, current_title="", artist="", l
 
 
 def resolve_youtube_audio_stream(video_id):
+    if not video_id:
+        return None
+
     if video_id in AUDIO_URL_CACHE:
         entry = AUDIO_URL_CACHE[video_id]
         if isinstance(entry, tuple) and len(entry) == 2:
@@ -680,14 +683,43 @@ def resolve_youtube_audio_stream(video_id):
         elif isinstance(entry, str):
             return entry
 
-    # Method 1: Android InnerTube API
+    # Method 1: Industry-standard yt-dlp extractor (handles n-sig, poToken, adaptive audio, web & android signatures)
     try:
-        url = "https://www.youtube.com/youtubei/v1/player"
+        import yt_dlp
+        import shutil
+        node_path = shutil.which('node') or '/opt/homebrew/bin/node'
+        ydl_opts = {
+            'format': 'bestaudio[ext=m4a]/bestaudio/best',
+            'quiet': True,
+            'no_warnings': True,
+            'extract_flat': False,
+            'socket_timeout': 8
+        }
+        if node_path and os.path.exists(node_path):
+            ydl_opts['js_runtimes'] = {'node': {'path': node_path}}
+        
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+            stream_url = info.get('url')
+            if stream_url:
+                AUDIO_URL_CACHE[video_id] = (stream_url, time.time())
+                return stream_url
+    except Exception as e:
+        print(f"[yt-dlp resolution error for {video_id}]: {e}", file=sys.stderr)
+
+    # Method 2: Android VR InnerTube Client (Oculus Quest 3)
+    try:
+        url = "https://www.youtube.com/youtubei/v1/player?prettyPrint=false"
         payload = {
             "context": {
                 "client": {
-                    "clientName": "ANDROID",
-                    "clientVersion": "19.09.37",
+                    "clientName": "ANDROID_VR",
+                    "clientVersion": "1.58.1",
+                    "deviceMake": "Oculus",
+                    "deviceModel": "Quest 3",
+                    "osName": "Android",
+                    "osVersion": "12",
+                    "platform": "MOBILE",
                     "hl": "en",
                     "gl": "US"
                 }
@@ -695,107 +727,45 @@ def resolve_youtube_audio_stream(video_id):
             "videoId": video_id
         }
         headers = {
-            "User-Agent": "com.google.android.youtube/19.09.37 (Linux; U; Android 11; en_US)",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Linux; Android 12; Quest 3) AppleWebKit/537.36"
         }
         req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers)
         with urllib.request.urlopen(req, timeout=5) as response:
             if response.status == 200:
                 data = json.loads(response.read().decode('utf-8'))
                 formats = data.get('streamingData', {}).get('adaptiveFormats', [])
-                audio_fmts = [f for f in formats if f.get('mimeType', '').startswith('audio/')]
-                best_fmt = None
-                for f in audio_fmts:
-                    if f.get('url'):
+                audio_fmts = [f for f in formats if f.get('mimeType', '').startswith('audio/') and f.get('url')]
+                if audio_fmts:
+                    best_fmt = audio_fmts[0]
+                    for f in audio_fmts:
                         if f.get('itag') in [140, 251, 171]:
                             best_fmt = f
                             break
-                        if not best_fmt:
-                            best_fmt = f
-
-                if best_fmt and best_fmt.get('url'):
-                    AUDIO_URL_CACHE[video_id] = (best_fmt['url'], time.time())
-                    return best_fmt['url']
+                    stream_url = best_fmt['url']
+                    AUDIO_URL_CACHE[video_id] = (stream_url, time.time())
+                    return stream_url
     except Exception as e:
-        print(f"[Android InnerTube player error]: {e}", file=sys.stderr)
+        print(f"[ANDROID_VR InnerTube player error]: {e}", file=sys.stderr)
 
-    # Method 2: iOS InnerTube API
-    try:
-        url = "https://www.youtube.com/youtubei/v1/player"
-        payload = {
-            "context": {
-                "client": {
-                    "clientName": "IOS",
-                    "clientVersion": "19.09.3",
-                    "deviceModel": "iPhone14,3",
-                    "hl": "en",
-                    "gl": "US"
-                }
-            },
-            "videoId": video_id
-        }
-        headers = {
-            "User-Agent": "com.google.ios.youtube/19.09.3 (iPhone14,3; U; CPU iOS 17_4 like Mac OS X)",
-            "Content-Type": "application/json"
-        }
-        req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers)
-        with urllib.request.urlopen(req, timeout=5) as response:
-            if response.status == 200:
-                data = json.loads(response.read().decode('utf-8'))
-                formats = data.get('streamingData', {}).get('adaptiveFormats', [])
-                for f in formats:
-                    if f.get('mimeType', '').startswith('audio/') and f.get('url'):
-                        AUDIO_URL_CACHE[video_id] = (f['url'], time.time())
-                        return f['url']
-    except Exception as e:
-        print(f"[iOS InnerTube player error]: {e}", file=sys.stderr)
-
-    # Method 3: Piped API
-    for instance in PIPED_INSTANCES[:3]:
+    # Method 3: Active Invidious / Piped Mirrors
+    active_mirrors = [
+        'https://invidious.protokolla.fi',
+        'https://yt.artemislena.eu',
+        'https://invidious.privacydev.net'
+    ]
+    for mirror in active_mirrors:
         try:
-            url = f"{instance}/streams/{video_id}"
-            data = None
-            if HTTP_SESSION is not None:
-                resp = HTTP_SESSION.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=2.5)
-                if resp.status_code == 200:
-                    data = resp.json()
-            else:
-                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-                with urllib.request.urlopen(req, timeout=2.5) as response:
-                    if response.status == 200:
-                        data = json.loads(response.read().decode('utf-8'))
-
-            if data:
-                audio_streams = data.get('audioStreams', [])
-                if audio_streams and len(audio_streams) > 0:
-                    stream_url = audio_streams[0].get('url')
-                    if stream_url:
-                        AUDIO_URL_CACHE[video_id] = (stream_url, time.time())
-                        return stream_url
-        except Exception:
-            continue
-
-    # Method 4: Invidious API
-    for instance in INVIDIOUS_MIRRORS[:3]:
-        try:
-            url = f"{instance}/api/v1/videos/{video_id}"
-            data = None
-            if HTTP_SESSION is not None:
-                resp = HTTP_SESSION.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=2.5)
-                if resp.status_code == 200:
-                    data = resp.json()
-            else:
-                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-                with urllib.request.urlopen(req, timeout=2.5) as response:
-                    if response.status == 200:
-                        data = json.loads(response.read().decode('utf-8'))
-
-            if data:
-                adaptive = data.get('adaptiveFormats', [])
-                for f in adaptive:
-                    if f.get('type', '').startswith('audio/') and f.get('url'):
-                        AUDIO_URL_CACHE[video_id] = (f['url'], time.time())
-                        return f['url']
+            url = f"{mirror}/api/v1/videos/{video_id}"
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=4) as response:
+                if response.status == 200:
+                    data = json.loads(response.read().decode('utf-8'))
+                    adaptive = data.get('adaptiveFormats', [])
+                    for f in adaptive:
+                        if f.get('type', '').startswith('audio/') and f.get('url'):
+                            AUDIO_URL_CACHE[video_id] = (f['url'], time.time())
+                            return f['url']
         except Exception:
             continue
 
@@ -1191,10 +1161,12 @@ class AuraMusicHandler(SimpleHTTPRequestHandler):
                 return
             stream_url = resolve_youtube_audio_stream(video_id)
             if not stream_url:
-                stream_url = f"https://inv.nadeko.net/latest_version?id={video_id}&itag=140"
-            self.send_response(302)
-            self.send_header('Location', stream_url)
+                self.send_error(503, "Audio stream unavailable")
+                return
+            self.send_response(200)
             self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Access-Control-Allow-Headers', 'Range')
+            self.send_header('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges')
             self.send_header('Accept-Ranges', 'bytes')
             self.send_header('Content-Type', 'audio/mp4')
             self.end_headers()
@@ -1322,10 +1294,7 @@ class AuraMusicHandler(SimpleHTTPRequestHandler):
 
             stream_url = resolve_youtube_audio_stream(video_id)
             if not stream_url:
-                # Redirect to public Invidious stream as fallback
-                self.send_response(302)
-                self.send_header('Location', f"https://inv.nadeko.net/latest_version?id={video_id}&itag=140")
-                self.end_headers()
+                self.send_json_response({"error": "Audio stream unavailable for this track"}, status=503)
                 return
 
             try:
@@ -1349,6 +1318,9 @@ class AuraMusicHandler(SimpleHTTPRequestHandler):
                         self.send_header('Content-Range', remote_stream.headers['Content-Range'])
                     
                     self.send_header('Accept-Ranges', 'bytes')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.send_header('Access-Control-Allow-Headers', 'Range')
+                    self.send_header('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges')
 
                     # If download requested, set attachment header
                     if is_download:
