@@ -156,7 +156,8 @@ def resolve_audio(video_id, force_refresh=False):
             'nocheckcertificate': True,
             'extractor_args': {
                 'youtube': {
-                    'player_client': ['android', 'ios', 'web']
+                    'player_client': ['android'],
+                    'player_skip': ['webpage', 'configs', 'initial_data']
                 }
             }
         }
