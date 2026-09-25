@@ -733,91 +733,83 @@ def resolve_youtube_audio_stream(video_id, force_refresh=False):
             return entry
 
     # Method 1: Industry-standard yt-dlp extractor (handles n-sig, poToken, adaptive audio, web & android signatures)
+    yt_dlp_mod = None
     try:
-        import yt_dlp
-        import shutil
-        node_path = shutil.which('node') or '/opt/homebrew/bin/node'
-        ydl_opts = {
-            'format': 'bestaudio[ext=m4a]/bestaudio/best',
-            'quiet': True,
-            'no_warnings': True,
-            'extract_flat': False,
-            'socket_timeout': 10,
-            'nocheckcertificate': True
-        }
-        if node_path and os.path.exists(node_path):
-            ydl_opts['js_runtimes'] = {'node': {'path': node_path}}
-        
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
-            stream_url = info.get('url')
-            if stream_url:
-                AUDIO_URL_CACHE[video_id] = (stream_url, time.time())
-                return stream_url
-    except Exception as e:
-        print(f"[yt-dlp resolution error for {video_id}]: {e}", file=sys.stderr)
+        import yt_dlp as yt_dlp_mod
+    except Exception:
+        # Dynamically discover site-packages across macOS python installations (Anaconda, Homebrew, etc.)
+        candidate_site_packages = [
+            '/opt/anaconda3/lib/python3.13/site-packages',
+            '/opt/anaconda3/lib/python3.12/site-packages',
+            '/opt/anaconda3/lib/python3.11/site-packages',
+            '/opt/homebrew/lib/python3.13/site-packages',
+            '/opt/homebrew/lib/python3.12/site-packages',
+            '/opt/homebrew/lib/python3.11/site-packages',
+            '/usr/local/lib/python3.13/site-packages',
+            '/usr/local/lib/python3.12/site-packages',
+            '/usr/local/lib/python3.11/site-packages',
+            '/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/site-packages',
+            '/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages'
+        ]
+        for sp in candidate_site_packages:
+            if os.path.exists(sp) and sp not in sys.path:
+                sys.path.append(sp)
+        try:
+            import yt_dlp as yt_dlp_mod
+        except Exception:
+            yt_dlp_mod = None
 
-    # Method 2: Android VR InnerTube Client (Oculus Quest 3)
-    try:
-        url = "https://www.youtube.com/youtubei/v1/player?prettyPrint=false"
-        payload = {
-            "context": {
-                "client": {
-                    "clientName": "ANDROID_VR",
-                    "clientVersion": "1.58.1",
-                    "deviceMake": "Oculus",
-                    "deviceModel": "Quest 3",
-                    "osName": "Android",
-                    "osVersion": "12",
-                    "platform": "MOBILE",
-                    "hl": "en",
-                    "gl": "US"
-                }
-            },
-            "videoId": video_id
-        }
-        headers = {
-            "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Linux; Android 12; Quest 3) AppleWebKit/537.36"
-        }
-        req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers)
-        with urllib.request.urlopen(req, timeout=5) as response:
-            if response.status == 200:
-                data = json.loads(response.read().decode('utf-8'))
-                formats = data.get('streamingData', {}).get('adaptiveFormats', [])
-                audio_fmts = [f for f in formats if f.get('mimeType', '').startswith('audio/') and f.get('url')]
-                if audio_fmts:
-                    best_fmt = audio_fmts[0]
-                    for f in audio_fmts:
-                        if f.get('itag') in [140, 251, 171]:
-                            best_fmt = f
-                            break
-                    stream_url = best_fmt['url']
+    if yt_dlp_mod is not None:
+        try:
+            import shutil
+            node_path = shutil.which('node') or ('/opt/homebrew/bin/node' if os.path.exists('/opt/homebrew/bin/node') else None)
+            ydl_opts = {
+                'format': 'bestaudio[ext=m4a]/bestaudio/best',
+                'quiet': True,
+                'no_warnings': True,
+                'extract_flat': False,
+                'socket_timeout': 10,
+                'nocheckcertificate': True
+            }
+            if node_path and os.path.exists(node_path):
+                ydl_opts['js_runtimes'] = {'node': {'path': node_path}}
+
+            with yt_dlp_mod.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+                stream_url = info.get('url')
+                if stream_url:
                     AUDIO_URL_CACHE[video_id] = (stream_url, time.time())
                     return stream_url
-    except Exception as e:
-        print(f"[ANDROID_VR InnerTube player error]: {e}", file=sys.stderr)
+        except Exception as e:
+            print(f"[yt-dlp module resolution error for {video_id}]: {e}", file=sys.stderr)
 
-    # Method 3: Active Invidious / Piped Mirrors
-    active_mirrors = [
-        'https://invidious.protokolla.fi',
-        'https://yt.artemislena.eu',
-        'https://invidious.privacydev.net'
-    ]
-    for mirror in active_mirrors:
-        try:
-            url = f"{mirror}/api/v1/videos/{video_id}"
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=4) as response:
-                if response.status == 200:
-                    data = json.loads(response.read().decode('utf-8'))
-                    adaptive = data.get('adaptiveFormats', [])
-                    for f in adaptive:
-                        if f.get('type', '').startswith('audio/') and f.get('url'):
-                            AUDIO_URL_CACHE[video_id] = (f['url'], time.time())
-                            return f['url']
-        except Exception:
-            continue
+    # Method 1B: Standalone yt-dlp CLI binary fallback (e.g. if running under Python without yt-dlp package)
+    try:
+        import shutil, subprocess
+        yt_cli = shutil.which('yt-dlp') or (
+            '/opt/anaconda3/bin/yt-dlp' if os.path.exists('/opt/anaconda3/bin/yt-dlp') else None
+        )
+        if yt_cli:
+            node_path = shutil.which('node') or ('/opt/homebrew/bin/node' if os.path.exists('/opt/homebrew/bin/node') else None)
+            cmd = [
+                yt_cli,
+                '-g',
+                '-f', 'bestaudio[ext=m4a]/bestaudio/best',
+                '--socket-timeout', '10',
+                '--no-check-certificate'
+            ]
+            if node_path and os.path.exists(node_path):
+                cmd.extend(['--js-runtimes', f'node:{node_path}'])
+            cmd.append(f"https://www.youtube.com/watch?v={video_id}")
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=12)
+            if proc.returncode == 0 and proc.stdout.strip():
+                lines = [l.strip() for l in proc.stdout.strip().splitlines() if l.strip().startswith('http')]
+                if lines:
+                    stream_url = lines[0]
+                    AUDIO_URL_CACHE[video_id] = (stream_url, time.time())
+                    return stream_url
+    except Exception as cli_err:
+        print(f"[yt-dlp CLI resolution error for {video_id}]: {cli_err}", file=sys.stderr)
 
     return None
 
@@ -1408,8 +1400,16 @@ class AuraMusicHandler(SimpleHTTPRequestHandler):
                                 break
                             self.wfile.write(chunk)
                 except urllib.error.HTTPError as http_err:
-                    if http_err.code in (403, 410) and attempt == 1:
-                        print(f"[Audio Stream Expired/403 for {video_id}], refreshing cache...", file=sys.stderr)
+                    if attempt == 1 and http_err.code in (403, 410, 404):
+                        print(f"[Audio Stream Expired/{http_err.code} for {video_id}], refreshing cache...", file=sys.stderr)
+                        AUDIO_URL_CACHE.pop(video_id, None)
+                        fresh_url = resolve_youtube_audio_stream(video_id, force_refresh=True)
+                        if fresh_url and fresh_url != target_url:
+                            return stream_data(fresh_url, attempt=2)
+                    raise
+                except Exception as e:
+                    if attempt == 1:
+                        print(f"[Audio Stream connect error for {video_id}]: {e}, trying fresh stream...", file=sys.stderr)
                         AUDIO_URL_CACHE.pop(video_id, None)
                         fresh_url = resolve_youtube_audio_stream(video_id, force_refresh=True)
                         if fresh_url and fresh_url != target_url:
@@ -1422,7 +1422,10 @@ class AuraMusicHandler(SimpleHTTPRequestHandler):
                 pass
             except Exception as err:
                 print(f"[Audio Stream Error for {video_id}]: {err}", file=sys.stderr)
-                if not self.wfile.closed:
+                try:
+                    self.send_json_response({"error": "Audio stream failed upstream"}, status=503)
+                except Exception:
+                    pass
                     self.send_error(502, "Error streaming audio")
             return
 

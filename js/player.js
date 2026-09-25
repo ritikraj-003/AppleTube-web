@@ -324,6 +324,14 @@ class AudioPlayer {
       this.updateMediaSessionPosition();
     });
 
+    this.audio.addEventListener('loadedmetadata', () => {
+      this.logPlaybackChain('loadedmetadata', { playResult: 'Metadata loaded successfully' });
+    });
+
+    this.audio.addEventListener('canplay', () => {
+      this.logPlaybackChain('canplay', { playResult: 'Can play audio' });
+    });
+
     this.audio.addEventListener('ended', () => {
       this.handleTrackEnded();
     });
@@ -334,26 +342,37 @@ class AudioPlayer {
         return;
       }
       console.warn('Native HTMLAudioElement playback error encountered:', e, this.audio.error);
+      this.logPlaybackChain('HTMLAudioElement error event', {
+        playResult: this.audio.error ? `Code ${this.audio.error.code}: ${this.audio.error.message || 'Media error'}` : 'Audio error event'
+      });
       this.handleAudioPlaybackError(this.audio.error ? `Error code ${this.audio.error.code}: ${this.audio.error.message || 'Media error'}` : 'Audio error event');
     });
   }
 
-  logPlaybackDebug(resultOrStatus = 'success') {
-    const t = this.currentTrack;
-    if (!t) return;
+  logPlaybackChain(stepLabel = 'DEBUG', extra = {}) {
+    const t = this.currentTrack || {};
     const err = this.audio.error;
-    const errStr = err ? `Code ${err.code} (${err.message || 'MediaError'})` : 'none';
+    const errStr = err ? `Code ${err.code}: ${err.message || 'MediaError'}` : 'none';
     console.log(
-      `[PLAYBACK DEBUG]\n` +
-      `Song ID: ${t.id || t.videoId || 'unknown'}\n` +
-      `Song title: ${t.title || 'unknown'}\n` +
-      `Resolved audio URL: ${this.audio.currentSrc || this.audio.src || t.audioUrl || 'none'}\n` +
-      `Audio source selected: ${t.source || (t.videoId ? 'YouTube Live Proxy' : 'Direct Audio Stream')}\n` +
-      `HTTP/network status: networkState=${this.audio.networkState}\n` +
-      `HTMLAudioElement readyState: ${this.audio.readyState}\n` +
-      `HTMLAudioElement error: ${errStr}\n` +
-      `play() result/error: ${resultOrStatus}`
+      `===== MUSIC PLAYBACK DEBUG =====\n` +
+      `STEP: ${stepLabel}\n` +
+      `1. SEARCH RESULT: ${JSON.stringify(t)}\n` +
+      `2. SELECTED SONG: ${t.title || 'N/A'}\n` +
+      `3. SONG ID: ${t.id || t.videoId || 'N/A'}\n` +
+      `4. AUDIO SOURCE REQUEST: ${extra.sourceRequest || t.audioUrl || (t.videoId ? '/api/yt/audio?id=' + t.videoId : 'N/A')}\n` +
+      `5. RESOLVED AUDIO URL: ${extra.resolvedUrl || t.audioUrl || this.audio.src || 'N/A'}\n` +
+      `6. NETWORK RESPONSE: ${extra.networkResponse || (this.audio.networkState === 2 ? 'loading...' : (this.audio.networkState === 1 ? 'idle/200' : 'networkState=' + this.audio.networkState))}\n` +
+      `7. AUDIO ELEMENT SRC: ${this.audio.src || 'N/A'}\n` +
+      `8. READY STATE: ${this.audio.readyState}\n` +
+      `9. NETWORK STATE: ${this.audio.networkState}\n` +
+      `10. MEDIA ERROR: ${errStr}\n` +
+      `11. PLAY() RESULT: ${extra.playResult || 'pending'}\n` +
+      `===============================`
     );
+  }
+
+  logPlaybackDebug(resultOrStatus = 'success') {
+    this.logPlaybackChain('logPlaybackDebug', { playResult: resultOrStatus });
   }
 
   async tryLoadAndPlaySource(candidateUrl) {
@@ -397,6 +416,10 @@ class AudioPlayer {
 
     if (this.isHandlingPlaybackError) return;
     this.isHandlingPlaybackError = true;
+
+    console.error(`[AudioPlayer] handleAudioPlaybackError TRIGGERED. Detail: ${errorDetail}`);
+    console.trace('[AudioPlayer] Stack trace of handleAudioPlaybackError trigger:');
+    this.logPlaybackChain('ERROR: handleAudioPlaybackError TRIGGERED', { playResult: `Cause: ${errorDetail}` });
 
     try {
       // Auto-detect videoId if missing
@@ -943,9 +966,12 @@ class AudioPlayer {
     } catch (e) {}
 
     const targetUrl = this.currentTrack.audioUrl;
+    this.logPlaybackChain('1-5: AUDIO/STREAM RESOLUTION', { sourceRequest: this.currentTrack.audioUrl, resolvedUrl: targetUrl });
+
     if (targetUrl) {
       this.audio.src = targetUrl;
       this.audio.load();
+      this.logPlaybackChain('6-8: audio.load()', { sourceRequest: targetUrl, resolvedUrl: targetUrl, playResult: 'audio.load() executed' });
     }
 
     try {
@@ -973,15 +999,17 @@ class AudioPlayer {
     }
 
     // Primary audio engine: play via native HTML5 <audio>
+    this.logPlaybackChain('9-10: audio.play() requested', { sourceRequest: targetUrl, resolvedUrl: targetUrl, playResult: 'calling audio.play()' });
     const playPromise = this.audio.play();
     if (playPromise !== undefined) {
       playPromise
         .then(() => {
-          this.logPlaybackDebug('Playback started successfully');
+          this.logPlaybackChain('11: ACTUAL PLAYBACK (play resolved)', { sourceRequest: targetUrl, resolvedUrl: targetUrl, playResult: 'SUCCESS - play() promise fulfilled' });
           this.notify('playbackChange', true);
           this.updateMediaSessionPlaybackState('playing');
         })
         .catch(err => {
+          this.logPlaybackChain('11: PLAY() RESULT (play rejected)', { sourceRequest: targetUrl, resolvedUrl: targetUrl, playResult: `REJECTED: ${err.name} - ${err.message}` });
           if (err.name === 'AbortError') {
             // Play was superseded by a new track or load operation
             return;
@@ -989,13 +1017,11 @@ class AudioPlayer {
           if (err.name === 'NotAllowedError') {
             // Autoplay policy prevented automatic playback; pause UI and wait for user play tap
             console.warn('[AudioPlayer] Playback not allowed by autoplay policy:', err);
-            this.logPlaybackDebug(`Autoplay blocked: ${err.message}`);
             this.notify('playbackChange', false);
             this.updateMediaSessionPlaybackState('paused');
             return;
           }
           console.warn('[AudioPlayer] Native HTMLAudio play promise rejected:', err);
-          this.logPlaybackDebug(`play() rejected: ${err.name} - ${err.message}`);
           this.handleAudioPlaybackError(err.message);
         });
     }
@@ -1567,3 +1593,6 @@ class AudioPlayer {
 }
 
 export const player = new AudioPlayer();
+if (typeof window !== 'undefined') {
+  window.player = player;
+}

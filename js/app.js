@@ -4200,4 +4200,5 @@ class App {
 window.addEventListener('DOMContentLoaded', () => {
   window.AuraApp = new App();
   window.UIManager = UIManager;
+  window.player = player;
 });

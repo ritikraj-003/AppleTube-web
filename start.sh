@@ -37,5 +37,14 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
   (sleep 1 && open "http://localhost:$PORT") &
 fi
 
+# Determine modern Python binary with yt-dlp support
+if [ -x "/opt/anaconda3/bin/python3" ]; then
+  PYTHON_BIN="/opt/anaconda3/bin/python3"
+elif [ -x "/opt/homebrew/bin/python3" ]; then
+  PYTHON_BIN="/opt/homebrew/bin/python3"
+else
+  PYTHON_BIN="$(which python3)"
+fi
+
 # Run live YouTube server bound to 0.0.0.0
-python3 server.py "$PORT"
+"$PYTHON_BIN" server.py "$PORT"
