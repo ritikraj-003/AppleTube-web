@@ -150,7 +150,9 @@ def resolve_audio(video_id, force_refresh=False):
     try:
         import yt_dlp
         ydl_opts = {
-            'format': 'bestaudio/best',
+            # Keep the Vercel audio proxy audio-only. Falling back to `best`
+            # can select a muxed video+audio stream that browsers expose as video/mp4.
+            'format': 'bestaudio',
             'quiet': True,
             'no_warnings': True,
             'extract_flat': False,
