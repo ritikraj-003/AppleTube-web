@@ -1647,6 +1647,29 @@
   opacity: 1;
 }
 
+.queue-drawer.dragging {
+  transition: none;
+  transform: translate(-50%, var(--queue-drag-offset, 0px));
+}
+
+.queue-drawer-swipe-handle {
+  display: block;
+  align-self: center;
+  width: 38px;
+  height: 4px;
+  margin: -8px 0 -4px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.42);
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.queue-drawer-swipe-handle:active {
+  cursor: grabbing;
+}
+
 .queue-section-divider {
   display: flex;
   align-items: center;
@@ -2731,6 +2754,10 @@ body.fullscreen-player-open .toast-container {
 
   .queue-drawer.open {
     transform: translateY(0);
+  }
+
+  .queue-drawer.open.dragging {
+    transform: translateY(var(--queue-drag-offset, 0px));
   }
 
   .queue-list {

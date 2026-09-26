@@ -195,7 +195,6 @@ class App {
 
       // Queue Drawer
       queueDrawer: document.getElementById('queueDrawer'),
-      btnCloseQueue: document.getElementById('btnCloseQueue'),
       btnClearQueue: document.getElementById('btnClearQueue'),
       queueSuggestionsContainer: document.getElementById('queueSuggestionsContainer'),
       queueSmartAutoplayToggle: document.getElementById('queueSmartAutoplayToggle'),
@@ -1423,9 +1422,52 @@ class App {
       });
     }
 
-    this.dom.btnCloseQueue.addEventListener('click', () => {
-      this.dom.queueDrawer.classList.remove('open');
-    });
+    // Drag the queue sheet's top handle down to dismiss it.
+    if (this.dom.queueDrawer) {
+      const queueSwipeHandle = this.dom.queueDrawer.querySelector('.queue-drawer-swipe-handle');
+      let queueSwipeStart = null;
+      const resetQueueSwipe = () => {
+        queueSwipeStart = null;
+        this.dom.queueDrawer.classList.remove('dragging');
+        this.dom.queueDrawer.style.removeProperty('--queue-drag-offset');
+      };
+
+      queueSwipeHandle?.addEventListener('pointerdown', (event) => {
+        if (!event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return;
+        queueSwipeStart = {
+          pointerId: event.pointerId,
+          x: event.clientX,
+          y: event.clientY
+        };
+        queueSwipeHandle.setPointerCapture(event.pointerId);
+        event.preventDefault();
+      });
+
+      queueSwipeHandle?.addEventListener('pointermove', (event) => {
+        if (!queueSwipeStart || event.pointerId !== queueSwipeStart.pointerId) return;
+        const deltaY = event.clientY - queueSwipeStart.y;
+        const deltaX = event.clientX - queueSwipeStart.x;
+        if (deltaY > 8 && deltaY > Math.abs(deltaX) * 1.2) {
+          event.preventDefault();
+          this.dom.queueDrawer.style.setProperty('--queue-drag-offset', `${deltaY}px`);
+          this.dom.queueDrawer.classList.add('dragging');
+        }
+      });
+
+      const finishQueueSwipe = (event) => {
+        if (!queueSwipeStart || event.pointerId !== queueSwipeStart.pointerId) {
+          resetQueueSwipe();
+          return;
+        }
+        const deltaY = event.clientY - queueSwipeStart.y;
+        const deltaX = Math.abs(event.clientX - queueSwipeStart.x);
+        if (deltaY > 65 && deltaY > deltaX * 1.2) this.dom.queueDrawer.classList.remove('open');
+        resetQueueSwipe();
+      };
+
+      queueSwipeHandle?.addEventListener('pointerup', finishQueueSwipe);
+      queueSwipeHandle?.addEventListener('pointercancel', resetQueueSwipe);
+    }
 
     this.dom.btnClearQueue.addEventListener('click', () => {
       player.clearQueue();
