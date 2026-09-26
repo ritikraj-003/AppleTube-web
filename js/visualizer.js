@@ -63,7 +63,7 @@ export class AudioVisualizer {
 
     this.ctx.clearRect(0, 0, this.width, this.height);
 
-    const isPlaying = !player.audio.paused;
+    const isPlaying = player.isPlaying;
 
     // Use Web Audio analyser data if connected, otherwise generate organic wave if playing
     if (player.audioConnected && player.analyser && isPlaying) {

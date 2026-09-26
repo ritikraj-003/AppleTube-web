@@ -2183,11 +2183,11 @@ class App {
           break;
         case 'ArrowRight':
           e.preventDefault();
-          player.seekTo(player.audio.currentTime + (e.shiftKey ? 15 : 5));
+          player.seekTo(player.currentTime + (e.shiftKey ? 15 : 5));
           break;
         case 'ArrowLeft':
           e.preventDefault();
-          player.seekTo(Math.max(0, player.audio.currentTime - (e.shiftKey ? 15 : 5)));
+          player.seekTo(Math.max(0, player.currentTime - (e.shiftKey ? 15 : 5)));
           break;
         case 'ArrowUp':
           e.preventDefault();
@@ -3409,7 +3409,7 @@ class App {
           idx,
           player.currentTrack?.id,
           (t) => {
-            if (player.currentTrack?.id === t.id && !player.audio.paused) {
+            if (player.currentTrack?.id === t.id && player.isPlaying) {
               player.togglePlay();
             } else {
               player.playTrack(t, recent);
@@ -3627,7 +3627,7 @@ class App {
           idx,
           player.currentTrack?.id,
           (t) => {
-            if (player.currentTrack?.id === t.id && !player.audio.paused) {
+            if (player.currentTrack?.id === t.id && player.isPlaying) {
               player.togglePlay();
             } else {
               player.playTrack(t, recentTracks);
