@@ -150,19 +150,14 @@ def resolve_audio(video_id, force_refresh=False):
     try:
         import yt_dlp
         ydl_opts = {
-            # Keep the Vercel audio proxy audio-only. Falling back to `best`
-            # can select a muxed video+audio stream that browsers expose as video/mp4.
-            'format': 'bestaudio',
+            # Prefer a broadly supported audio-only format. Do not fall back to
+            # `best`, which can select a video stream the app's <audio> element cannot play.
+            'format': 'bestaudio[ext=m4a]/bestaudio',
             'quiet': True,
             'no_warnings': True,
             'extract_flat': False,
             'socket_timeout': 10,
             'nocheckcertificate': True,
-            'extractor_args': {
-                'youtube': {
-                    'player_client': ['tv_embedded', 'android_music', 'ios_music', 'android']
-                }
-            }
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
